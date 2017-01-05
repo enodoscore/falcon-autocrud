@@ -290,10 +290,19 @@ class CollectionResource(BaseResource):
                     count     = resources.count()
                 resources = resources.limit(req.get_param_as_int('__limit'))
 
+            resource_meta = getattr(self, 'resource_meta', {})
+
+            def add_meta(resource, attributes):
+                output = attributes.copy()
+                if len(resource_meta.keys()) > 0:
+                    output['meta'] = {key: value(resource) for key, value in resource_meta.items()}
+                return output
+
             resp.status = falcon.HTTP_OK
             result = {
                 'data': [
-                    self.serialize(resource, getattr(self, 'response_fields', None), getattr(self, 'geometry_axes', {})) for resource in resources
+                    add_meta(resource, self.serialize(resource, getattr(self, 'response_fields', None), getattr(self, 'geometry_axes', {})))
+                    for resource in resources
                 ],
             }
             if '__offset' in req.params or '__limit' in req.params:
@@ -302,6 +311,7 @@ class CollectionResource(BaseResource):
                     result['meta']['offset'] = req.get_param_as_int('__offset')
                 if '__limit' in req.params:
                     result['meta']['limit'] = req.get_param_as_int('__limit')
+
             req.context['result'] = result
 
             after_get = getattr(self, 'after_get', None)
@@ -561,6 +571,13 @@ class SingleResource(BaseResource):
                             'type':         included,
                             'attributes':   self.serialize(included_resource, response_fields, geometry_axes),
                         })
+
+            resource_meta = getattr(self, 'meta', {})
+            if len(resource_meta.keys()) > 0 and 'meta' not in result:
+                result['meta'] = {}
+
+            for key, value in resource_meta.items():
+                result['meta'][key] = value(resource)
 
             req.context['result'] = result
 

@@ -521,3 +521,35 @@ class PublicHolidayCollectionResource(CollectionResource):
 
 These fields will then be parsed and returned in the format
 'YYYY-mm-ddTHH:MM:SS', i.e. without the 'Z' suffix.
+
+### Meta-information
+
+To add meta-information to each resource in a collection response, include the following:
+
+```
+catchphrases = {
+    'Oliver':   'You have failed this city',
+    'Cisco':    "OK, you don't get to pick the names",
+}
+
+class CharacterCollectionResource(CollectionResource):
+    model = Character
+    resource_meta = {
+        'catchphrase':  lambda resource: catchphrases.get(resource.name, None)
+    }
+```
+
+To add meta-information to the top level of a single resource response, include the following:
+
+```
+catchphrases = {
+    'Oliver':   'You have failed this city',
+    'Cisco':    "OK, you don't get to pick the names",
+}
+
+class CharacterResource(SingleResource):
+    model = Character
+    meta = {
+        'catchphrase':  lambda resource: catchphrases.get(resource.name, None)
+    }
+```
