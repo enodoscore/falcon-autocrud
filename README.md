@@ -524,7 +524,25 @@ These fields will then be parsed and returned in the format
 
 ### Meta-information
 
-To add meta-information to each resource in a collection response, include the following:
+To add meta-information to each resource in a collection response, assuming your models are:
+
+```
+class Team(Base):
+    __tablename__ = 'teams'
+    id          = Column(Integer, primary_key=True)
+    name        = Column(String(50))
+    characters  = relationship('Character')
+
+class Character(Base):
+    __tablename__ = 'characters'
+    id          = Column(Integer, primary_key=True)
+    name        = Column(String(50))
+
+    team_id     = Column(Integer, ForeignKey('teams.id'), nullable=True)
+    team        = relationship('Team', back_populates='characters')
+```
+
+Then include the following:
 
 ```
 catchphrases = {
@@ -552,4 +570,57 @@ class CharacterResource(SingleResource):
     meta = {
         'catchphrase':  lambda resource: catchphrases.get(resource.name, None)
     }
+```
+
+You can join another table to get the meta information:
+
+```
+class CharacterCollectionResource(CollectionResource):
+    model = Character
+    resource_meta = {
+        'catchphrase':  lambda resource, team_name: catchphrases.get(resource.name, None),
+        'team_name':    lambda resource, team_name: team_name,
+    }
+    extra_select = [Team.name]
+
+    def get_filter(self, req, resp, query, *args, **kwargs):
+        return query.join(Team)
+
+class CharacterResource(SingleResource):
+    model = Character
+    meta = {
+        'catchphrase':  lambda resource, team_name: catchphrases.get(resource.name, None),
+        'team_name':    lambda resource, team_name: team_name,
+    }
+    extra_select = [Team.name]
+
+    def get_filter(self, req, resp, query, *args, **kwargs):
+        return query.join(Team)
+
+```
+
+You can even use SQL functions to calculate the values in the meta-information:
+
+```
+from sqlalchemy import func
+
+class TeamCollectionResource(CollectionResource):
+    model = Team
+    resource_meta = {
+        'team_size': lambda resource, team_size: team_size,
+    }
+    extra_select = [func.count(Character.id)]
+
+    def get_filter(self, req, resp, query, *args, **kwargs):
+        return query.join(Character).group_by(Team.id)
+
+class TeamResource(SingleResource):
+    model = Team
+    meta = {
+        'team_size': lambda resource, team_size: team_size,
+    }
+    extra_select = [func.count(Character.id)]
+
+    def get_filter(self, req, resp, query, *args, **kwargs):
+        return query.join(Character).group_by(Team.id)
 ```

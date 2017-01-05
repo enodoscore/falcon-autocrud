@@ -246,7 +246,8 @@ class CollectionResource(BaseResource):
             raise falcon.errors.HTTPMethodNotAllowed(getattr(self, 'methods', ['GET', 'POST', 'PATCH']))
 
         with session_scope(self.db_engine, sessionmaker_=self.sessionmaker, **self.sessionmaker_kwargs) as db_session:
-            resources = self.apply_arg_filter(req, resp, db_session.query(self.model), kwargs)
+            extra_select    = getattr(self, 'extra_select', [])
+            resources       = self.apply_arg_filter(req, resp, db_session.query(self.model, *extra_select), kwargs)
 
             resources = self.filter_by_params(
                 self.get_filter(
@@ -295,13 +296,23 @@ class CollectionResource(BaseResource):
             def add_meta(resource, attributes):
                 output = attributes.copy()
                 if len(resource_meta.keys()) > 0:
-                    output['meta'] = {key: value(resource) for key, value in resource_meta.items()}
+                    if len(extra_select) > 0:
+                        output['meta'] = {key: value(*resource) for key, value in resource_meta.items()}
+                    else:
+                        output['meta'] = {key: value(resource) for key, value in resource_meta.items()}
                 return output
 
             resp.status = falcon.HTTP_OK
             result = {
                 'data': [
-                    add_meta(resource, self.serialize(resource, getattr(self, 'response_fields', None), getattr(self, 'geometry_axes', {})))
+                    add_meta(
+                        resource,
+                        self.serialize(
+                            resource[0] if len(extra_select) > 0 else resource,
+                            getattr(self, 'response_fields', None),
+                            getattr(self, 'geometry_axes', {})
+                        )
+                    )
                     for resource in resources
                 ],
             }
@@ -534,7 +545,8 @@ class SingleResource(BaseResource):
             raise falcon.errors.HTTPMethodNotAllowed(getattr(self, 'methods', ['GET', 'PUT', 'PATCH', 'DELETE']))
 
         with session_scope(self.db_engine, sessionmaker_=self.sessionmaker, **self.sessionmaker_kwargs) as db_session:
-            resources = self.apply_arg_filter(req, resp, db_session.query(self.model), kwargs)
+            extra_select    = getattr(self, 'extra_select', [])
+            resources = self.apply_arg_filter(req, resp, db_session.query(self.model, *extra_select), kwargs)
 
             resources = self.get_filter(req, resp, resources, *args, **kwargs)
 
@@ -548,7 +560,11 @@ class SingleResource(BaseResource):
 
             resp.status = falcon.HTTP_OK
             result = {
-                'data': self.serialize(resource, getattr(self, 'response_fields', None), getattr(self, 'geometry_axes', {})),
+                'data': self.serialize(
+                    resource[0] if len(extra_select) > 0 else resource,
+                    getattr(self, 'response_fields', None),
+                    getattr(self, 'geometry_axes', {})
+                ),
             }
             if '__included' in req.params:
                 allowed_included = getattr(self, 'allowed_included', {})
@@ -577,7 +593,10 @@ class SingleResource(BaseResource):
                 result['meta'] = {}
 
             for key, value in resource_meta.items():
-                result['meta'][key] = value(resource)
+                if len(extra_select) > 0:
+                    result['meta'][key] = value(*resource)
+                else:
+                    result['meta'][key] = value(resource)
 
             req.context['result'] = result
 

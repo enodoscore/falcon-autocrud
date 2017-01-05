@@ -1,8 +1,8 @@
 import json
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, func
 
 from .test_base import Base, BaseTestCase
-from .test_fixtures import Character
+from .test_fixtures import Character, Team
 
 from .resource import CollectionResource, SingleResource
 
@@ -24,46 +24,152 @@ class CharacterResource(SingleResource):
         'catchphrase':  lambda resource: catchphrases.get(resource.name, None)
     }
 
+class ExtendedCharacterCollectionResource(CollectionResource):
+    model = Character
+    resource_meta = {
+        'catchphrase':  lambda resource, team_name: catchphrases.get(resource.name, None),
+        'team_name':    lambda resource, team_name: team_name,
+    }
+    extra_select = [Team.name]
+
+    def get_filter(self, req, resp, query, *args, **kwargs):
+        return query.join(Team)
+
+class ExtendedCharacterResource(SingleResource):
+    model = Character
+    meta = {
+        'catchphrase':  lambda resource, team_name: catchphrases.get(resource.name, None),
+        'team_name':    lambda resource, team_name: team_name,
+    }
+    extra_select = [Team.name]
+
+    def get_filter(self, req, resp, query, *args, **kwargs):
+        return query.join(Team)
+
+class TeamCollectionResource(CollectionResource):
+    model = Team
+    resource_meta = {
+        'team_size': lambda resource, team_size: team_size,
+    }
+    extra_select = [func.count(Character.id)]
+
+    def get_filter(self, req, resp, query, *args, **kwargs):
+        return query.join(Character).group_by(Team.id)
+
+class TeamResource(SingleResource):
+    model = Team
+    meta = {
+        'team_size': lambda resource, team_size: team_size,
+    }
+    extra_select = [func.count(Character.id)]
+
+    def get_filter(self, req, resp, query, *args, **kwargs):
+        return query.join(Character).group_by(Team.id)
+
 
 class MetaTest(BaseTestCase):
     def create_test_resources(self):
         self.app.add_route('/characters', CharacterCollectionResource(self.db_engine))
         self.app.add_route('/characters/{id}', CharacterResource(self.db_engine))
 
-    def create_common_fixtures(self):
-        response, = self.simulate_request('/characters', method='POST', body=json.dumps({'id': 1, 'name': 'Barry'}), headers={'Accept': 'application/json', 'Content-Type': 'application/json'})
-        response, = self.simulate_request('/characters', method='POST', body=json.dumps({'id': 2, 'name': 'Oliver'}), headers={'Accept': 'application/json', 'Content-Type': 'application/json'})
-        response, = self.simulate_request('/characters', method='POST', body=json.dumps({'id': 3, 'name': 'Caitlin'}), headers={'Accept': 'application/json', 'Content-Type': 'application/json'})
-        response, = self.simulate_request('/characters', method='POST', body=json.dumps({'id': 4, 'name': 'Cisco'}), headers={'Accept': 'application/json', 'Content-Type': 'application/json'})
+        self.app.add_route('/extended-characters', ExtendedCharacterCollectionResource(self.db_engine))
+        self.app.add_route('/extended-characters/{id}', ExtendedCharacterResource(self.db_engine))
 
+        self.app.add_route('/teams', TeamCollectionResource(self.db_engine))
+        self.app.add_route('/teams/{id}', TeamResource(self.db_engine))
+
+    def create_common_fixtures(self):
+        team_flash = Team(id=1, name="Team Flash")
+        team_arrow = Team(id=2, name="Team Arrow")
+        self.db_session.add(team_flash)
+        self.db_session.add(team_arrow)
+        barry = Character(id=1, name='Barry', team=team_flash)
+        oliver = Character(id=2, name='Oliver', team=team_arrow)
+        caitlin = Character(id=3, name='Caitlin', team=team_flash)
+        cisco = Character(id=4, name='Cisco', team=team_flash)
+        self.db_session.add(barry)
+        self.db_session.add(oliver)
+        self.db_session.add(caitlin)
+        self.db_session.add(cisco)
+        self.db_session.commit()
 
     def test_meta(self):
         response, = self.simulate_request('/characters/1', method='GET', headers={'Accept': 'application/json'})
         self.assertOK(response, {
-            'data': {'id': 1, 'name': 'Barry', 'team_id': None}, 'meta': {'catchphrase': None}
+            'data': {'id': 1, 'name': 'Barry', 'team_id': 1}, 'meta': {'catchphrase': None}
         })
 
         response, = self.simulate_request('/characters/2', method='GET', headers={'Accept': 'application/json'})
         self.assertOK(response, {
-            'data': {'id': 2, 'name': 'Oliver', 'team_id': None}, 'meta': {'catchphrase': 'You have failed this city'}
+            'data': {'id': 2, 'name': 'Oliver', 'team_id': 2}, 'meta': {'catchphrase': 'You have failed this city'}
         })
 
         response, = self.simulate_request('/characters/3', method='GET', headers={'Accept': 'application/json'})
         self.assertOK(response, {
-            'data': {'id': 3, 'name': 'Caitlin', 'team_id': None}, 'meta': {'catchphrase': None}
+            'data': {'id': 3, 'name': 'Caitlin', 'team_id': 1}, 'meta': {'catchphrase': None}
         })
 
         response, = self.simulate_request('/characters/4', method='GET', headers={'Accept': 'application/json'})
         self.assertOK(response, {
-            'data': {'id': 4, 'name': 'Cisco', 'team_id': None}, 'meta': {'catchphrase': "OK, you don't get to pick the names"}
+            'data': {'id': 4, 'name': 'Cisco', 'team_id': 1}, 'meta': {'catchphrase': "OK, you don't get to pick the names"}
         })
 
         response, = self.simulate_request('/characters', method='GET', headers={'Accept': 'application/json'})
         self.assertOK(response, {
             'data': [
-                {'id': 1, 'name': 'Barry', 'team_id': None, 'meta': {'catchphrase': None}},
-                {'id': 2, 'name': 'Oliver', 'team_id': None, 'meta': {'catchphrase': 'You have failed this city'}},
-                {'id': 3, 'name': 'Caitlin', 'team_id': None, 'meta': {'catchphrase': None}},
-                {'id': 4, 'name': 'Cisco', 'team_id': None, 'meta': {'catchphrase': "OK, you don't get to pick the names"}},
+                {'id': 1, 'name': 'Barry', 'team_id': 1, 'meta': {'catchphrase': None}},
+                {'id': 2, 'name': 'Oliver', 'team_id': 2, 'meta': {'catchphrase': 'You have failed this city'}},
+                {'id': 3, 'name': 'Caitlin', 'team_id': 1, 'meta': {'catchphrase': None}},
+                {'id': 4, 'name': 'Cisco', 'team_id': 1, 'meta': {'catchphrase': "OK, you don't get to pick the names"}},
+            ]
+        })
+
+    def test_join_meta(self):
+        response, = self.simulate_request('/extended-characters/1', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': {'id': 1, 'name': 'Barry', 'team_id': 1}, 'meta': {'catchphrase': None, 'team_name': 'Team Flash'}
+        })
+
+        response, = self.simulate_request('/extended-characters/2', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': {'id': 2, 'name': 'Oliver', 'team_id': 2}, 'meta': {'catchphrase': 'You have failed this city', 'team_name': 'Team Arrow'}
+        })
+
+        response, = self.simulate_request('/extended-characters/3', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': {'id': 3, 'name': 'Caitlin', 'team_id': 1}, 'meta': {'catchphrase': None, 'team_name': 'Team Flash'}
+        })
+
+        response, = self.simulate_request('/extended-characters/4', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': {'id': 4, 'name': 'Cisco', 'team_id': 1}, 'meta': {'catchphrase': "OK, you don't get to pick the names", 'team_name': 'Team Flash'}
+        })
+
+        response, = self.simulate_request('/extended-characters', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': [
+                {'id': 1, 'name': 'Barry', 'team_id': 1, 'meta': {'catchphrase': None, 'team_name': 'Team Flash'}},
+                {'id': 2, 'name': 'Oliver', 'team_id': 2, 'meta': {'catchphrase': 'You have failed this city', 'team_name': 'Team Arrow'}},
+                {'id': 3, 'name': 'Caitlin', 'team_id': 1, 'meta': {'catchphrase': None, 'team_name': 'Team Flash'}},
+                {'id': 4, 'name': 'Cisco', 'team_id': 1, 'meta': {'catchphrase': "OK, you don't get to pick the names", 'team_name': 'Team Flash'}},
+            ]
+        })
+
+    def test_group_func_meta(self):
+        response, = self.simulate_request('/teams/1', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': {'id': 1, 'name': 'Team Flash'}, 'meta': {'team_size': 3},
+        })
+
+        response, = self.simulate_request('/teams/2', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': {'id': 2, 'name': 'Team Arrow'}, 'meta': {'team_size': 1},
+        })
+
+        response, = self.simulate_request('/teams', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': [
+                {'id': 1, 'name': 'Team Flash', 'meta': {'team_size': 3}},
+                {'id': 2, 'name': 'Team Arrow', 'meta': {'team_size': 1}},
             ]
         })
