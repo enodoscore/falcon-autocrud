@@ -166,7 +166,7 @@ class MetaTest(BaseTestCase):
             'data': {'id': 2, 'name': 'Team Arrow'}, 'meta': {'team_size': 1},
         })
 
-        response, = self.simulate_request('/teams', method='GET', headers={'Accept': 'application/json'})
+        response, = self.simulate_request('/teams', query_string='__sort=id', method='GET', headers={'Accept': 'application/json'})
         self.assertOK(response, {
             'data': [
                 {'id': 1, 'name': 'Team Flash', 'meta': {'team_size': 3}},
