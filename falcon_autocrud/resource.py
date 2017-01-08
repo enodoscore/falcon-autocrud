@@ -43,6 +43,22 @@ except ImportError:
 
 
 class BaseResource(object):
+    def _is_foreign_key_violation(self, error):
+        args = error.orig.args
+        return self.db_engine.url.get_backend_name() == 'postgresql' and \
+            args[0] == 'ERROR' and (
+            args[1] == '23503' or                       # Postgres 9.5
+            (args[1] == 'ERROR' and args[2] == '23503') # Postgres 9.6
+        )
+
+    def _is_unique_violation(self, error):
+        args = error.orig.args
+        return self.db_engine.url.get_backend_name() == 'postgresql' and \
+            args[0] == 'ERROR' and (
+            args[1] == '23505' or                       # Postgres 9.5
+            (args[1] == 'ERROR' and args[2] == '23505') # Postgres 9.6
+        )
+
     def __init__(self, db_engine, logger=None, sessionmaker_=sessionmaker, sessionmaker_kwargs={}):
         self.db_engine = db_engine
         self.sessionmaker = sessionmaker_
@@ -372,7 +388,7 @@ class CollectionResource(BaseResource):
                 raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
             except sqlalchemy.exc.ProgrammingError as err:
                 db_session.rollback()
-                if err.orig.args[1] == '23505':
+                if self._is_unique_violation(err):
                     raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
                 else:
                     raise
@@ -461,7 +477,7 @@ class CollectionResource(BaseResource):
                 raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
             except sqlalchemy.exc.ProgrammingError as err:
                 db_session.rollback()
-                if err.orig.args[1] == '23505':
+                if self._is_unique_violation(err):
                     raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
                 else:
                     raise
@@ -656,7 +672,7 @@ class SingleResource(BaseResource):
                 raise falcon.errors.HTTPConflict('Conflict', 'Other content links to this')
             except sqlalchemy.exc.ProgrammingError as err:
                 db_session.rollback()
-                if err.orig.args[1] == '23503':
+                if self._is_foreign_key_violation(err):
                     raise falcon.errors.HTTPConflict('Conflict', 'Other content links to this')
                 else:
                     raise
@@ -708,7 +724,7 @@ class SingleResource(BaseResource):
                 raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
             except sqlalchemy.exc.ProgrammingError as err:
                 db_session.rollback()
-                if err.orig.args[1] == '23505':
+                if self._is_unique_violation(err):
                     raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
                 else:
                     raise
@@ -787,7 +803,7 @@ class SingleResource(BaseResource):
                 raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
             except sqlalchemy.exc.ProgrammingError as err:
                 db_session.rollback()
-                if err.orig.args[1] == '23505':
+                if self._is_unique_violation(err):
                     raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
                 else:
                     raise
