@@ -152,29 +152,6 @@ class BaseResource(object):
             attr: _serialize_value(attr, getattr(resource, attr)) for attr in response_fields if isinstance(attrs[attr], ColumnProperty)
         }
 
-    def apply_arg_filter(self, req, resp, resources, kwargs):
-        for key, value in kwargs.items():
-            key = getattr(self, 'attr_map', {}).get(key, key)
-            if callable(key):
-                resources = key(req, resp, resources, **kwargs)
-            else:
-                attr = getattr(self.model, key, None)
-                if attr is None or not isinstance(inspect(self.model).attrs[key], ColumnProperty):
-                    self.logger.error("Programming error: {0}.attr_map['{1}'] does not exist or is not a column".format(self.model, key))
-                    raise falcon.errors.HTTPInternalServerError('Internal Server Error', 'An internal server error occurred')
-                resources = resources.filter(attr == value)
-        return resources
-
-    def apply_default_attributes(self, defaults_type, req, resp, attributes):
-        defaults = getattr(self, defaults_type, {})
-        for key, setter in defaults.items():
-            if key not in attributes:
-                attributes[key] = setter(req, resp, attributes)
-
-class CollectionResource(BaseResource):
-    """
-    Provides CRUD facilities for a resource collection.
-    """
     def deserialize(self, model, path_data, body_data, allow_recursion=False):
         mapper          = inspect(model)
         attributes      = {}
@@ -248,6 +225,30 @@ class CollectionResource(BaseResource):
             else:
                 attributes[key] = value
         return deserialized
+
+    def apply_arg_filter(self, req, resp, resources, kwargs):
+        for key, value in kwargs.items():
+            key = getattr(self, 'attr_map', {}).get(key, key)
+            if callable(key):
+                resources = key(req, resp, resources, **kwargs)
+            else:
+                attr = getattr(self.model, key, None)
+                if attr is None or not isinstance(inspect(self.model).attrs[key], ColumnProperty):
+                    self.logger.error("Programming error: {0}.attr_map['{1}'] does not exist or is not a column".format(self.model, key))
+                    raise falcon.errors.HTTPInternalServerError('Internal Server Error', 'An internal server error occurred')
+                resources = resources.filter(attr == value)
+        return resources
+
+    def apply_default_attributes(self, defaults_type, req, resp, attributes):
+        defaults = getattr(self, defaults_type, {})
+        for key, setter in defaults.items():
+            if key not in attributes:
+                attributes[key] = setter(req, resp, attributes)
+
+class CollectionResource(BaseResource):
+    """
+    Provides CRUD facilities for a resource collection.
+    """
 
     def get_filter(self, req, resp, query, *args, **kwargs):
         return query
@@ -496,57 +497,6 @@ class SingleResource(BaseResource):
     """
     Provides CRUD facilities for a single resource.
     """
-    def deserialize(self, data):
-        mapper          = inspect(self.model)
-        attributes      = {}
-        naive_datetimes = getattr(self, 'naive_datetimes', [])
-
-        for key, value in data.items():
-            if isinstance(getattr(self.model, key, None), property):
-                # Value is set using a function, so we cannot tell what type it will be
-                attributes[key] = value
-                continue
-            try:
-                column = mapper.columns[key]
-            except KeyError:
-                # Assume programmer has done their job of filtering out invalid
-                # columns, and that they are going to use this field for some
-                # custom purpose
-                continue
-            if isinstance(column.type, sqlalchemy.sql.sqltypes.DateTime):
-                if value is None:
-                    attributes[key] = None
-                elif key in naive_datetimes:
-                    attributes[key] = datetime.strptime(value, '%Y-%m-%dT%H:%M:%S')
-                else:
-                    attributes[key] = datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ')
-            elif isinstance(column.type, sqlalchemy.sql.sqltypes.Date):
-                attributes[key] = datetime.strptime(value, '%Y-%m-%d').date() if value is not None else None
-            elif isinstance(column.type, sqlalchemy.sql.sqltypes.Time):
-                if value is not None:
-                    hour, minute, second = value.split(':')
-                    attributes[key] = time(int(hour), int(minute), int(second))
-                else:
-                    attributes[key] = None
-            elif support_geo and isinstance(column.type, Geometry) and column.type.geometry_type == 'POINT':
-                axes    = getattr(self, 'geometry_axes', {}).get(key, ['x', 'y'])
-                point   = Point(value[axes[0]], value[axes[1]])
-                # geoalchemy2.shape.from_shape uses buffer() which causes INSERT to fail
-                attributes[key] = WKBElement(point.wkb, srid=4326)
-            elif support_geo and isinstance(column.type, Geometry) and column.type.geometry_type == 'LINESTRING':
-                axes    = getattr(self, 'geometry_axes', {}).get(key, ['x', 'y'])
-                line    = LineString([point[axes[0]], point[axes[1]]] for point in value)
-                # geoalchemy2.shape.from_shape uses buffer() which causes INSERT to fail
-                attributes[key] = WKBElement(line.wkb, srid=4326)
-            elif support_geo and isinstance(column.type, Geometry) and column.type.geometry_type == 'POLYGON':
-                axes    = getattr(self, 'geometry_axes', {}).get(key, ['x', 'y'])
-                polygon = Polygon([point[axes[0]], point[axes[1]]] for point in value)
-                # geoalchemy2.shape.from_shape uses buffer() which causes INSERT to fail
-                attributes[key] = WKBElement(polygon.wkb, srid=4326)
-            else:
-                attributes[key] = value
-
-        return attributes
 
     def get_filter(self, req, resp, query, *args, **kwargs):
         return query
@@ -705,7 +655,7 @@ class SingleResource(BaseResource):
                 self.logger.error('Programming error: multiple results found for put of model {0}'.format(self.model))
                 raise falcon.errors.HTTPInternalServerError('Internal Server Error', 'An internal server error occurred')
 
-            attributes = self.deserialize(req.context['doc'])
+            attributes, linked = self.deserialize(self.model, {}, req.context['doc'], False)
 
             self.apply_default_attributes('put_defaults', req, resp, attributes)
 
@@ -778,7 +728,7 @@ class SingleResource(BaseResource):
             except sqlalchemy.orm.exc.NoResultFound:
                 raise falcon.errors.HTTPConflict('Conflict', 'Resource found but conditions violated')
 
-            attributes = self.deserialize(req.context['doc'])
+            attributes, linked = self.deserialize(self.model, {}, req.context['doc'], False)
 
             self.apply_default_attributes('patch_defaults', req, resp, attributes)
 
