@@ -2,6 +2,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 import falcon
 import falcon.errors
+import itertools
 import json
 import sqlalchemy.exc
 import sqlalchemy.orm.exc
@@ -128,18 +129,18 @@ class BaseResource(object):
             elif support_geo and isinstance(value, WKBElement):
                 value = geoalchemy2.shape.to_shape(value)
                 if isinstance(value, Point):
-                    axes = (geometry_axes or {}).get(name, ['x', 'y'])
-                    return {axes[0]: value.x, axes[1]: value.y}
+                    axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
+                    return dict(itertools.zip_longest(axes, value.coords[0]))
                 elif isinstance(value, LineString):
-                    axes = (geometry_axes or {}).get(name, ['x', 'y'])
+                    axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
                     return [
-                        {axes[0]: point[0], axes[1]: point[1]}
+                        dict(itertools.zip_longest(axes, point))
                         for point in list(value.coords)
                     ]
                 elif isinstance(value, Polygon):
-                    axes = (geometry_axes or {}).get(name, ['x', 'y'])
+                    axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
                     return [
-                        {axes[0]: point[0], axes[1]: point[1]}
+                        dict(itertools.zip_longest(axes, point))
                         for point in list(value.boundary.coords)
                     ]
                 else:
@@ -207,19 +208,19 @@ class BaseResource(object):
                     attributes[key] = time(int(hour), int(minute), int(second))
                 else:
                     attributes[key] = None
-            elif support_geo and isinstance(column.type, Geometry) and column.type.geometry_type == 'POINT':
-                axes    = getattr(self, 'geometry_axes', {}).get(key, ['x', 'y'])
-                point   = Point(value[axes[0]], value[axes[1]])
+            elif support_geo and isinstance(column.type, Geometry) and column.type.geometry_type in ['POINT', 'POINTZ']:
+                axes    = getattr(self, 'geometry_axes', {}).get(key, ['x', 'y', 'z'] if column.type.geometry_type == 'POINTZ' else ['x', 'y'])
+                point   = Point(*index(value.get(axes[index], 0) for index in range(0, len(axes))))
                 # geoalchemy2.shape.from_shape uses buffer() which causes INSERT to fail
                 attributes[key] = WKBElement(point.wkb, srid=4326)
-            elif support_geo and isinstance(column.type, Geometry) and column.type.geometry_type == 'LINESTRING':
-                axes    = getattr(self, 'geometry_axes', {}).get(key, ['x', 'y'])
-                line    = LineString([point[axes[0]], point[axes[1]]] for point in value)
+            elif support_geo and isinstance(column.type, Geometry) and column.type.geometry_type in ['LINESTRING', 'LINESTRINGZ']:
+                axes    = getattr(self, 'geometry_axes', {}).get(key, ['x', 'y', 'z'] if column.type.geometry_type == 'LINESTRINGZ' else ['x', 'y'])
+                line    = LineString([point.get(axes[index], 0) for index in range(0, len(axes))] for point in value)
                 # geoalchemy2.shape.from_shape uses buffer() which causes INSERT to fail
                 attributes[key] = WKBElement(line.wkb, srid=4326)
-            elif support_geo and isinstance(column.type, Geometry) and column.type.geometry_type == 'POLYGON':
-                axes    = getattr(self, 'geometry_axes', {}).get(key, ['x', 'y'])
-                polygon = Polygon([point[axes[0]], point[axes[1]]] for point in value)
+            elif support_geo and isinstance(column.type, Geometry) and column.type.geometry_type in ['POLYGON', 'POLYGONZ']:
+                axes    = getattr(self, 'geometry_axes', {}).get(key, ['x', 'y', 'z'] if column.type.geometry_type == 'POLYGONZ' else ['x', 'y'])
+                polygon = Polygon([point.get(axes[index], 0) for index in range(0, len(axes))] for point in value)
                 # geoalchemy2.shape.from_shape uses buffer() which causes INSERT to fail
                 attributes[key] = WKBElement(polygon.wkb, srid=4326)
             else:
