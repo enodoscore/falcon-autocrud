@@ -210,7 +210,7 @@ class BaseResource(object):
                     attributes[key] = None
             elif support_geo and isinstance(column.type, Geometry) and column.type.geometry_type in ['POINT', 'POINTZ']:
                 axes    = getattr(self, 'geometry_axes', {}).get(key, ['x', 'y', 'z'] if column.type.geometry_type == 'POINTZ' else ['x', 'y'])
-                point   = Point(*index(value.get(axes[index], 0) for index in range(0, len(axes))))
+                point   = Point(*list(value.get(axes[index], 0) for index in range(0, len(axes))))
                 # geoalchemy2.shape.from_shape uses buffer() which causes INSERT to fail
                 attributes[key] = WKBElement(point.wkb, srid=4326)
             elif support_geo and isinstance(column.type, Geometry) and column.type.geometry_type in ['LINESTRING', 'LINESTRINGZ']:
