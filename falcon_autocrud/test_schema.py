@@ -211,6 +211,11 @@ class IOTest(unittest.TestCase):
         self.assertEqual(response[0].decode('utf-8'), 'Hello this is some text')
         self.assertEqual(self.non_json_resource.received.decode('utf-8'), 'Hello this is some text')
 
+        response = self.simulate_request('/non_json_response', method='POST', body='Hello this is some text', headers={'Accept': 'application/json, text/plain'})
+        self.assertEqual(self.srmock.status, '201 Created')
+        self.assertEqual(response[0].decode('utf-8'), 'Hello this is some text')
+        self.assertEqual(self.non_json_resource.received.decode('utf-8'), 'Hello this is some text')
+
     def test_schemaless_json_endpoint(self):
         response = self.simulate_request('/schemaless_json_response', method='POST', body=json.dumps({'hello': 'world'}), headers={'Accept': 'application/json', 'Content-Type': 'application/json'})
         self.assertEqual(self.srmock.status, '201 Created')

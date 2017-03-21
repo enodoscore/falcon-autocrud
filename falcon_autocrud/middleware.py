@@ -57,7 +57,7 @@ class Middleware(object):
             if req.content_type is None or 'application/json' not in req.content_type:
                 raise falcon.HTTPUnsupportedMediaType('This API supports only JSON-encoded requests')
 
-        if 'application/json' in req.content_type:
+        if req.content_type is not None and 'application/json' in req.content_type:
             body = req.stream.read()
             if not body:
                 raise falcon.HTTPBadRequest(
