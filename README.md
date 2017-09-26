@@ -406,6 +406,17 @@ class EmployeeCollectionResource(CollectionResource):
     response_fields = ['id', 'name']
 ```
 
+Or you can limit them programmatically like this:
+
+```
+class EmployeeCollectionResource(CollectionResource):
+    model = Employee
+
+    def response_fields(self, req, resp, resource, *args, **kwargs):
+        # Determine response fields via things such as authenticated user
+        return fields
+```
+
 ### Creating linked resources
 
 The collection POST method allows creation of linked resources in the one POST

@@ -43,6 +43,13 @@ except ImportError:
     support_geo = False
 
 
+def _get_response_fields(self, req, resp, resource, *args, **kwargs):
+    response_fields = getattr(self, 'response_fields', None)
+    if callable(response_fields):
+        return response_fields(req, resp, resource, *args, **kwargs)
+    else:
+        return response_fields
+
 class BaseResource(object):
     def _is_foreign_key_violation(self, error):
         args = error.orig.args
@@ -327,7 +334,7 @@ class CollectionResource(BaseResource):
                         resource,
                         self.serialize(
                             resource[0] if len(extra_select) > 0 else resource,
-                            getattr(self, 'response_fields', None),
+                            _get_response_fields(self, req, resp, resource, *args, **kwargs),
                             getattr(self, 'geometry_axes', {})
                         )
                     )
@@ -400,7 +407,7 @@ class CollectionResource(BaseResource):
 
             resp.status = falcon.HTTP_CREATED
             req.context['result'] = {
-                'data': self.serialize(resource, getattr(self, 'response_fields', None), getattr(self, 'geometry_axes', {})),
+                'data': self.serialize(resource, _get_response_fields(self, req, resp, resource, *args, **kwargs), getattr(self, 'geometry_axes', {})),
             }
 
             after_post = getattr(self, 'after_post', None)
@@ -529,7 +536,7 @@ class SingleResource(BaseResource):
             result = {
                 'data': self.serialize(
                     resource[0] if len(extra_select) > 0 else resource,
-                    getattr(self, 'response_fields', None),
+                    _get_response_fields(self, req, resp, resource, *args, **kwargs),
                     getattr(self, 'geometry_axes', {})
                 ),
             }
@@ -552,7 +559,16 @@ class SingleResource(BaseResource):
                         result['included'].append({
                             'id':           getattr(resource, primary_key.key),
                             'type':         included,
-                            'attributes':   self.serialize(included_resource, response_fields, geometry_axes),
+                            'attributes':   self.serialize(
+                                included_resource,
+                                (
+                                    response_fields(self, req, resp, included_resource, *args, **kwargs)
+                                    if callable(response_fields)
+                                    else
+                                    response_fields
+                                ),
+                                geometry_axes
+                            ),
                         })
 
             resource_meta = getattr(self, 'meta', {})
@@ -685,7 +701,7 @@ class SingleResource(BaseResource):
 
             resp.status = falcon.HTTP_OK
             req.context['result'] = {
-                'data': self.serialize(resource, getattr(self, 'response_fields', None), getattr(self, 'geometry_axes', {})),
+                'data': self.serialize(resource, _get_response_fields(self, req, resp, resource, *args, **kwargs), getattr(self, 'geometry_axes', {})),
             }
 
             after_put = getattr(self, 'after_put', None)
@@ -764,7 +780,7 @@ class SingleResource(BaseResource):
 
             resp.status = falcon.HTTP_OK
             req.context['result'] = {
-                'data': self.serialize(resource, getattr(self, 'response_fields', None), getattr(self, 'geometry_axes', {})),
+                'data': self.serialize(resource, _get_response_fields(self, req, resp, resource, *args, **kwargs), getattr(self, 'geometry_axes', {})),
             }
 
             after_patch = getattr(self, 'after_patch', None)

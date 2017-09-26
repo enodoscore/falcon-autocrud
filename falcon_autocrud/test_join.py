@@ -31,6 +31,18 @@ class LimitedLinkEmployeeResource(SingleResource):
         }
     }
 
+def response_fields(self, req, resp, resource, *args, **kwargs):
+    return req.get_header('X-Fields').split(',')
+
+class ProgrammaticallyLimitedLinkEmployeeResource(SingleResource):
+    model = Employee
+    allowed_included = {
+        'companies': {
+            'link':             lambda resource: [resource.company],
+            'response_fields':  response_fields
+        }
+    }
+
 class CompanyEmployeeCollectionResource(CollectionResource):
     model = Employee
 
@@ -51,6 +63,7 @@ class PreconditionTest(BaseTestCase):
         self.app.add_route('/employees', EmployeeCollectionResource(self.db_engine))
         self.app.add_route('/employees/{id}', EmployeeResource(self.db_engine))
         self.app.add_route('/employees2/{id}', LimitedLinkEmployeeResource(self.db_engine))
+        self.app.add_route('/employees3/{id}', ProgrammaticallyLimitedLinkEmployeeResource(self.db_engine))
         self.app.add_route('/companies/{company_id}/employees', CompanyEmployeeCollectionResource(self.db_engine))
         self.app.add_route('/companies/{company_id}/employees/{id}', CompanyEmployeeResource(self.db_engine))
 
@@ -172,6 +185,63 @@ class PreconditionTest(BaseTestCase):
                         "id":           1,
                         "type":         "companies",
                         "attributes":   {
+                            "name": "Initech",
+                        },
+                    }
+                ]
+            }
+        )
+
+        response, = self.simulate_request('/employees3/1', method='GET', query_string='__included=companies', headers={'X-Fields': 'name', 'Accept': 'application/json'})
+        self.assertOK(
+            response,
+            {
+                "data" : {
+                    "id":          1,
+                    "company_id":  1,
+                    "name":        "Jim",
+                    "caps_name":   None,
+                    "end_time":    None,
+                    "joined":      None,
+                    "left":        None,
+                    "lunch_start": None,
+                    "pay_rate":    None,
+                    "start_time":  None,
+                },
+                "included": [
+                    {
+                        "id":           1,
+                        "type":         "companies",
+                        "attributes":   {
+                            "name": "Initech",
+                        },
+                    }
+                ]
+            }
+        )
+
+        response, = self.simulate_request('/employees3/1', method='GET', query_string='__included=companies', headers={'X-Fields': 'id,name', 'Accept': 'application/json'})
+        self.assertOK(
+            response,
+            {
+                "data" : {
+                    "id":          1,
+                    "company_id":  1,
+                    "name":        "Jim",
+                    "caps_name":   None,
+                    "end_time":    None,
+                    "joined":      None,
+                    "left":        None,
+                    "lunch_start": None,
+                    "pay_rate":    None,
+                    "start_time":  None,
+                },
+                "included": [
+                    {
+                        "id":           1,
+                        "type":         "companies",
+                        "attributes":   {
+                            "id":   1,
                             "name": "Initech",
                         },
                     }
