@@ -1,6 +1,6 @@
 from setuptools import setup
 
-version = '1.0.31'
+version = '1.0.32'
 
 try:
     import pypandoc
