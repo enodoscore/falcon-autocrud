@@ -322,7 +322,7 @@ class CollectionResource(BaseResource):
                 output = attributes.copy()
                 if callable(resource_meta):
                     if len(extra_select) > 0:
-                        meta_dict = resource_meta(req, resp, *resource, *args, **kwargs)
+                        meta_dict = resource_meta(req, resp, *list(itertools.chain(resource, args)), **kwargs)
                     else:
                         meta_dict = resource_meta(req, resp, resource, *args, **kwargs)
                     if meta_dict is not None:
@@ -581,7 +581,7 @@ class SingleResource(BaseResource):
             resource_meta = getattr(self, 'meta', {})
             if callable(resource_meta):
                 if len(extra_select) > 0:
-                    meta_dict = resource_meta(req, resp, *resource, *args, **kwargs)
+                    meta_dict = resource_meta(req, resp, *list(itertools.chain(resource, args)), **kwargs)
                 else:
                     meta_dict = resource_meta(req, resp, resource, *args, **kwargs)
                 if meta_dict is not None:
