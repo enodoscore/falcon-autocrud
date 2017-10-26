@@ -320,7 +320,14 @@ class CollectionResource(BaseResource):
 
             def add_meta(resource, attributes):
                 output = attributes.copy()
-                if len(resource_meta.keys()) > 0:
+                if callable(resource_meta):
+                    if len(extra_select) > 0:
+                        meta_dict = resource_meta(req, resp, *resource, *args, **kwargs)
+                    else:
+                        meta_dict = resource_meta(req, resp, resource, *args, **kwargs)
+                    if meta_dict is not None:
+                        output['meta'] = meta_dict
+                elif len(resource_meta.keys()) > 0:
                     if len(extra_select) > 0:
                         output['meta'] = {key: value(*resource) for key, value in resource_meta.items()}
                     else:
@@ -572,14 +579,26 @@ class SingleResource(BaseResource):
                         })
 
             resource_meta = getattr(self, 'meta', {})
-            if len(resource_meta.keys()) > 0 and 'meta' not in result:
-                result['meta'] = {}
-
-            for key, value in resource_meta.items():
+            if callable(resource_meta):
                 if len(extra_select) > 0:
-                    result['meta'][key] = value(*resource)
+                    meta_dict = resource_meta(req, resp, *resource, *args, **kwargs)
                 else:
-                    result['meta'][key] = value(resource)
+                    meta_dict = resource_meta(req, resp, resource, *args, **kwargs)
+                if meta_dict is not None:
+                    if 'meta' not in result:
+                        result['meta'] = {}
+                    result['meta'].update(meta_dict)
+            else:
+                meta_dict = resource_meta
+
+                if len(meta_dict.keys()) > 0:
+                    if 'meta' not in result:
+                        result['meta'] = {}
+                    for key, value in meta_dict.items():
+                        if len(extra_select) > 0:
+                            result['meta'][key] = value(*resource)
+                        else:
+                            result['meta'][key] = value(resource)
 
             req.context['result'] = result
 

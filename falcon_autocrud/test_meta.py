@@ -66,6 +66,48 @@ class TeamResource(SingleResource):
     def get_filter(self, req, resp, query, *args, **kwargs):
         return query.join(Character).group_by(Team.id)
 
+class DynamicTeamCollectionResource(CollectionResource):
+    model = Team
+    def resource_meta(self, req, resp, resource, team_size, *args, **kwargs):
+        if ('id' in kwargs and kwargs['id'] == 1) or req.get_param('__without_size'):
+            return None
+        else:
+            return {
+                'team_size': team_size,
+            }
+    extra_select = [func.count(Character.id)]
+
+    def get_filter(self, req, resp, query, *args, **kwargs):
+        return query.join(Character).group_by(Team.id)
+
+class DynamicTeamResource(SingleResource):
+    model = Team
+    def meta(self, req, resp, resource, team_size, *args, **kwargs):
+        if req.get_param('__without_size'):
+            return None
+        else:
+            return {
+                'team_size': team_size,
+            }
+    extra_select = [func.count(Character.id)]
+
+    def get_filter(self, req, resp, query, *args, **kwargs):
+        return query.join(Character).group_by(Team.id)
+
+class DynamicTeamNoSizeCollectionResource(CollectionResource):
+    model = Team
+    def resource_meta(self, req, resp, resource, *args, **kwargs):
+        return {
+            'state': 'busy'
+        }
+
+class DynamicTeamNoSizeResource(SingleResource):
+    model = Team
+    def meta(self, req, resp, resource, *args, **kwargs):
+        return {
+            'state': 'busy'
+        }
+
 
 class MetaTest(BaseTestCase):
     def create_test_resources(self):
@@ -77,6 +119,12 @@ class MetaTest(BaseTestCase):
 
         self.app.add_route('/teams', TeamCollectionResource(self.db_engine))
         self.app.add_route('/teams/{id}', TeamResource(self.db_engine))
+
+        self.app.add_route('/dynamic-teams', DynamicTeamCollectionResource(self.db_engine))
+        self.app.add_route('/dynamic-teams/{id}', DynamicTeamResource(self.db_engine))
+
+        self.app.add_route('/dynamic-teams-without-size', DynamicTeamNoSizeCollectionResource(self.db_engine))
+        self.app.add_route('/dynamic-teams-without-size/{id}', DynamicTeamNoSizeResource(self.db_engine))
 
     def create_common_fixtures(self):
         team_flash = Team(id=1, name="Team Flash")
@@ -171,5 +219,50 @@ class MetaTest(BaseTestCase):
             'data': [
                 {'id': 1, 'name': 'Team Flash', 'meta': {'team_size': 3}},
                 {'id': 2, 'name': 'Team Arrow', 'meta': {'team_size': 1}},
+            ]
+        })
+
+    def test_dynamic_meta(self):
+        response, = self.simulate_request('/dynamic-teams/1', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': {'id': 1, 'name': 'Team Flash'}, 'meta': {'team_size': 3},
+        })
+        response, = self.simulate_request('/dynamic-teams-without-size/1', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': {'id': 1, 'name': 'Team Flash'}, 'meta': {'state': 'busy'},
+        })
+
+        response, = self.simulate_request('/dynamic-teams/2', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': {'id': 2, 'name': 'Team Arrow'}, 'meta': {'team_size': 1},
+        })
+        response, = self.simulate_request('/dynamic-teams/2', query_string='__without_size=1', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': {'id': 2, 'name': 'Team Arrow'},
+        })
+        response, = self.simulate_request('/dynamic-teams-without-size/2', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': {'id': 2, 'name': 'Team Arrow'}, 'meta': {'state': 'busy'},
+        })
+
+        response, = self.simulate_request('/dynamic-teams', query_string='__sort=id', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': [
+                {'id': 1, 'name': 'Team Flash', 'meta': {'team_size': 3}},
+                {'id': 2, 'name': 'Team Arrow', 'meta': {'team_size': 1}},
+            ]
+        })
+        response, = self.simulate_request('/dynamic-teams', query_string='__sort=id&__without_size=1', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': [
+                {'id': 1, 'name': 'Team Flash'},
+                {'id': 2, 'name': 'Team Arrow'},
+            ]
+        })
+        response, = self.simulate_request('/dynamic-teams-without-size', query_string='__sort=id&__without_size=1', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(response, {
+            'data': [
+                {'id': 1, 'name': 'Team Flash', 'meta': {'state': 'busy'}},
+                {'id': 2, 'name': 'Team Arrow', 'meta': {'state': 'busy'}},
             ]
         })

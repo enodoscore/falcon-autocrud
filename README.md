@@ -635,3 +635,34 @@ class TeamResource(SingleResource):
     def get_filter(self, req, resp, query, *args, **kwargs):
         return query.join(Character).group_by(Team.id)
 ```
+
+Or you can determine them entirely programmatically like this:
+
+```
+class TeamCollectionResource(CollectionResource):
+    model = Team
+    def resource_meta(self, req, resp, resource, team_size, *args, **kwargs):
+        return {
+            'team_size': team_size,
+        }
+    extra_select = [func.count(Character.id)]
+
+    def get_filter(self, req, resp, query, *args, **kwargs):
+        return query.join(Character).group_by(Team.id)
+
+class TeamResource(SingleResource):
+    model = Team
+    def meta(self, req, resp, resource, team_size, *args, **kwargs):
+        return {
+            'team_size': team_size,
+        }
+    extra_select = [func.count(Character.id)]
+
+    def get_filter(self, req, resp, query, *args, **kwargs):
+        return query.join(Character).group_by(Team.id)
+```
+
+The advantage of using the above method is that the keys can also be determined
+at runtime, and may change in difference circumstances (e.g. according to query
+parameters, or the permissions of the caller).  To include NO meta at all for
+the resource, return None from `resource_meta` or `meta` functions.
