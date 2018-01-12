@@ -681,24 +681,25 @@ class SingleResource(BaseResource):
             raise falcon.errors.HTTPMethodNotAllowed(getattr(self, 'methods', ['GET', 'PUT', 'PATCH', 'DELETE']))
 
         with session_scope(self.db_engine, sessionmaker_=self.sessionmaker, **self.sessionmaker_kwargs) as db_session:
-            attributes, linked = self.deserialize(self.model, {}, req.context['doc'], False)
-            self.apply_default_attributes('put_defaults', req, resp, attributes)
-
             resources = self.apply_arg_filter(req, resp, db_session.query(self.model), kwargs)
 
+            resource = None
             try:
-                resource    = resources.one()
-                is_new      = False
+                resource = resources.one()
             except sqlalchemy.orm.exc.NoResultFound:
-                if getattr(self, 'allow_put_insert', False):
-                    is_new      = True
-                    resource    = self.model(**attributes)
-                else:
+                if not getattr(self, 'allow_put_insert', False):
                     raise falcon.errors.HTTPNotFound()
             except sqlalchemy.orm.exc.MultipleResultsFound:
                 self.logger.error('Programming error: multiple results found for put of model {0}'.format(self.model))
                 raise falcon.errors.HTTPInternalServerError('Internal Server Error', 'An internal server error occurred')
 
+            is_new = resource is None
+            if is_new:
+                attributes, linked = self.deserialize(self.model, kwargs, req.context['doc'], False)
+                resource = self.model()
+            else:
+                attributes, linked = self.deserialize(self.model, {}, req.context['doc'], False)
+            self.apply_default_attributes('put_defaults', req, resp, attributes)
 
             for key, value in attributes.items():
                 setattr(resource, key, value)

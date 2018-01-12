@@ -48,6 +48,7 @@ class AutoCRUDTest(BaseTestCase):
         self.app.add_route('/employees', EmployeeCollectionResource(self.db_engine))
         self.app.add_route('/employees/{id}', EmployeeResource(self.db_engine))
         self.app.add_route('/put-insert-employees/{id}', PutInsertEmployeeResource(self.db_engine))
+        self.app.add_route('/put-insert-employees-by-company/{company_id}/{id}', PutInsertEmployeeResource(self.db_engine))
 
     def test_empty_collection(self):
         response, = self.simulate_request('/employees', method='GET', headers={'Accept': 'application/json'})
@@ -354,6 +355,8 @@ class AutoCRUDTest(BaseTestCase):
     def test_put_resource_insert(self):
         now     = datetime.utcnow()
         then    = now - timedelta(minutes=5)
+        initech = Company(id=1, name="Initech")
+        self.db_session.add(initech)
         self.db_session.add(Employee(name="Jim", joined=then))
         self.db_session.commit()
 
@@ -362,6 +365,13 @@ class AutoCRUDTest(BaseTestCase):
             'joined': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
         })
         response = self.simulate_request('/put-insert-employees/2', method='PUT', body=body, headers={'Content-Type': 'application/json', 'Accept': 'application/json'})
+        self.assertCreated(response)
+
+        body = json.dumps({
+            'name':   'Alice',
+            'joined': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        })
+        response = self.simulate_request('/put-insert-employees-by-company/1/3', method='PUT', body=body, headers={'Content-Type': 'application/json', 'Accept': 'application/json'})
         self.assertCreated(response)
 
         response, = self.simulate_request('/employees', method='GET', headers={'Accept': 'application/json'})
@@ -393,6 +403,18 @@ class AutoCRUDTest(BaseTestCase):
                         'lunch_start': None,
                         'end_time': None,
                         'caps_name': 'PUT BOB',
+                    },
+                    {
+                        'id':   3,
+                        'name': 'Alice',
+                        'joined': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                        'left': None,
+                        'company_id': 1,
+                        'pay_rate': None,
+                        'start_time': None,
+                        'lunch_start': None,
+                        'end_time': None,
+                        'caps_name': 'PUT ALICE',
                     },
                 ]
             }
@@ -435,6 +457,18 @@ class AutoCRUDTest(BaseTestCase):
                         'lunch_start': None,
                         'end_time': None,
                         'caps_name': 'PUT JACK',
+                    },
+                    {
+                        'id':   3,
+                        'name': 'Alice',
+                        'joined': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                        'left': None,
+                        'company_id': 1,
+                        'pay_rate': None,
+                        'start_time': None,
+                        'lunch_start': None,
+                        'end_time': None,
+                        'caps_name': 'PUT ALICE',
                     },
                 ]
             }
