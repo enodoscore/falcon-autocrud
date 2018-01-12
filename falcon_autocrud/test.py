@@ -32,6 +32,9 @@ class EmployeeResource(SingleResource):
         'caps_name': (lambda req, res, attributes: 'PATCH ' + attributes['name'].upper()),
     }
 
+class PutInsertEmployeeResource(EmployeeResource):
+    allow_put_insert = True
+
 class OtherEmployeeResource(SingleResource):
     model = Employee
     attr_map = {
@@ -44,6 +47,7 @@ class AutoCRUDTest(BaseTestCase):
         self.app.add_route('/companies/{id}', CompanyResource(self.db_engine))
         self.app.add_route('/employees', EmployeeCollectionResource(self.db_engine))
         self.app.add_route('/employees/{id}', EmployeeResource(self.db_engine))
+        self.app.add_route('/put-insert-employees/{id}', PutInsertEmployeeResource(self.db_engine))
 
     def test_empty_collection(self):
         response, = self.simulate_request('/employees', method='GET', headers={'Accept': 'application/json'})
@@ -342,6 +346,95 @@ class AutoCRUDTest(BaseTestCase):
                         'lunch_start': None,
                         'end_time': None,
                         'caps_name': None,
+                    },
+                ]
+            }
+        )
+
+    def test_put_resource_insert(self):
+        now     = datetime.utcnow()
+        then    = now - timedelta(minutes=5)
+        self.db_session.add(Employee(name="Jim", joined=then))
+        self.db_session.commit()
+
+        body = json.dumps({
+            'name':   'Bob',
+            'joined': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        })
+        response = self.simulate_request('/put-insert-employees/2', method='PUT', body=body, headers={'Content-Type': 'application/json', 'Accept': 'application/json'})
+        self.assertCreated(response)
+
+        response, = self.simulate_request('/employees', method='GET', headers={'Accept': 'application/json'})
+        self.assertEqual(self.srmock.status, '200 OK')
+        self.assertEqual(
+            json.loads(response.decode('utf-8')),
+            {
+                'data': [
+                    {
+                        'id':   1,
+                        'name': 'Jim',
+                        'joined': then.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                        'left': None,
+                        'company_id': None,
+                        'pay_rate': None,
+                        'start_time': None,
+                        'lunch_start': None,
+                        'end_time': None,
+                        'caps_name': None,
+                    },
+                    {
+                        'id':   2,
+                        'name': 'Bob',
+                        'joined': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                        'left': None,
+                        'company_id': None,
+                        'pay_rate': None,
+                        'start_time': None,
+                        'lunch_start': None,
+                        'end_time': None,
+                        'caps_name': 'PUT BOB',
+                    },
+                ]
+            }
+        )
+
+        # Test that a subsequent PUT will update the now-existing resource
+        body = json.dumps({
+            'name':   'Jack',
+            'joined': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        })
+        response = self.simulate_request('/put-insert-employees/2', method='PUT', body=body, headers={'Content-Type': 'application/json', 'Accept': 'application/json'})
+        self.assertOK(response)
+
+        response, = self.simulate_request('/employees', method='GET', headers={'Accept': 'application/json'})
+        self.assertEqual(self.srmock.status, '200 OK')
+        self.assertEqual(
+            json.loads(response.decode('utf-8')),
+            {
+                'data': [
+                    {
+                        'id':   1,
+                        'name': 'Jim',
+                        'joined': then.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                        'left': None,
+                        'company_id': None,
+                        'pay_rate': None,
+                        'start_time': None,
+                        'lunch_start': None,
+                        'end_time': None,
+                        'caps_name': None,
+                    },
+                    {
+                        'id':   2,
+                        'name': 'Jack',
+                        'joined': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                        'left': None,
+                        'company_id': None,
+                        'pay_rate': None,
+                        'start_time': None,
+                        'lunch_start': None,
+                        'end_time': None,
+                        'caps_name': 'PUT JACK',
                     },
                 ]
             }
@@ -1216,7 +1309,7 @@ class AutoCRUDTest(BaseTestCase):
         response, = self.simulate_request('/bad-employees/1', method='DELETE', headers={'Accept': 'application/json'})
         self.assertInternalServerError(response)
 
-        response, = self.simulate_request('/bad-employees/1', method='PUT', body=json.dumps({}), headers={'Content-Type': 'application/json', 'Accept': 'application/json'})
+        response, = self.simulate_request('/bad-employees/1', method='PUT', body=json.dumps({'name': 'Bob'}), headers={'Content-Type': 'application/json', 'Accept': 'application/json'})
         self.assertInternalServerError(response)
 
         response, = self.simulate_request('/bad-employees/1', method='PATCH', body=json.dumps({}), headers={'Accept': 'application/json', 'Content-Type': 'application/json'})
@@ -1237,7 +1330,7 @@ class AutoCRUDTest(BaseTestCase):
         response, = self.simulate_request('/more-bad-employees/1', method='DELETE', headers={'Accept': 'application/json'})
         self.assertInternalServerError(response)
 
-        response, = self.simulate_request('/more-bad-employees/1', method='PUT', body=json.dumps({}), headers={'Content-Type': 'application/json', 'Accept': 'application/json'})
+        response, = self.simulate_request('/more-bad-employees/1', method='PUT', body=json.dumps({'name': 'Bob'}), headers={'Content-Type': 'application/json', 'Accept': 'application/json'})
         self.assertInternalServerError(response)
 
         response, = self.simulate_request('/more-bad-employees/1', method='PATCH', body=json.dumps({}), headers={'Accept': 'application/json', 'Content-Type': 'application/json'})

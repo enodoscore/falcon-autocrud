@@ -681,19 +681,24 @@ class SingleResource(BaseResource):
             raise falcon.errors.HTTPMethodNotAllowed(getattr(self, 'methods', ['GET', 'PUT', 'PATCH', 'DELETE']))
 
         with session_scope(self.db_engine, sessionmaker_=self.sessionmaker, **self.sessionmaker_kwargs) as db_session:
+            attributes, linked = self.deserialize(self.model, {}, req.context['doc'], False)
+            self.apply_default_attributes('put_defaults', req, resp, attributes)
+
             resources = self.apply_arg_filter(req, resp, db_session.query(self.model), kwargs)
 
             try:
-                resource = resources.one()
+                resource    = resources.one()
+                is_new      = False
             except sqlalchemy.orm.exc.NoResultFound:
-                raise falcon.errors.HTTPNotFound()
+                if getattr(self, 'allow_put_insert', False):
+                    is_new      = True
+                    resource    = self.model(**attributes)
+                else:
+                    raise falcon.errors.HTTPNotFound()
             except sqlalchemy.orm.exc.MultipleResultsFound:
                 self.logger.error('Programming error: multiple results found for put of model {0}'.format(self.model))
                 raise falcon.errors.HTTPInternalServerError('Internal Server Error', 'An internal server error occurred')
 
-            attributes, linked = self.deserialize(self.model, {}, req.context['doc'], False)
-
-            self.apply_default_attributes('put_defaults', req, resp, attributes)
 
             for key, value in attributes.items():
                 setattr(resource, key, value)
@@ -718,7 +723,7 @@ class SingleResource(BaseResource):
                 db_session.rollback()
                 raise
 
-            resp.status = falcon.HTTP_OK
+            resp.status = falcon.HTTP_CREATED if is_new else falcon.HTTP_OK
             req.context['result'] = {
                 'data': self.serialize(resource, _get_response_fields(self, req, resp, resource, *args, **kwargs), getattr(self, 'geometry_axes', {})),
             }
