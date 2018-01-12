@@ -108,6 +108,14 @@ http DELETE http://localhost/employees/100
 echo '{"patches": [{"op": "add", "path": "/", "value": {"name": "Jim"}}]}' | http PATCH http://localhost/employees
 ```
 
+Note that by default, PUT will only update, and will not insert a new resource
+if a matching one does not exist at the address.  If you wish new resources to
+be created, then add the following to your resource:
+
+```
+allow_put_insert = True
+```
+
 ### Limiting methods
 
 By default collections will autogenerate methods GET, POST and PATCH, while
