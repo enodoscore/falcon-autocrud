@@ -3,6 +3,18 @@ from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric, T
 from sqlalchemy.orm import relationship
 
 
+class VersionedAccount(Base):
+    __tablename__ = 'versioned_accounts'
+    id          = Column(Integer, primary_key=True)
+    name        = Column(String(50), unique=True)
+    owner       = Column(String(50), unique=True)
+    version_id  = Column(Integer, nullable=False)
+    deleted     = Column(DateTime)
+
+    __mapper_args__ = {
+        'version_id_col': version_id
+    }
+
 class Account(Base):
     __tablename__ = 'accounts'
     id          = Column(Integer, primary_key=True)

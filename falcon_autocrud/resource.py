@@ -643,6 +643,10 @@ class SingleResource(BaseResource):
                 self.logger.error('Programming error: multiple results found for delete of model {0}'.format(self.model))
                 raise falcon.errors.HTTPInternalServerError('Internal Server Error', 'An internal server error occurred')
 
+            before_delete = getattr(self, 'before_delete', None)
+            if before_delete is not None:
+                self.before_delete(req, resp, db_session, resource, *args, **kwargs)
+
             try:
                 mark_deleted = getattr(self, 'mark_deleted', None)
                 if mark_deleted is not None:
@@ -656,6 +660,10 @@ class SingleResource(BaseResource):
                 # As far we I know, this should only be caused by foreign key constraint being violated
                 db_session.rollback()
                 raise falcon.errors.HTTPConflict('Conflict', 'Other content links to this')
+            except sqlalchemy.orm.exc.StaleDataError as err:
+                # Version field in the model was not as expected
+                db_session.rollback()
+                raise falcon.errors.HTTPConflict('Conflict', 'Resource found but conditions violated')
             except sqlalchemy.exc.ProgrammingError as err:
                 db_session.rollback()
                 if self._is_foreign_key_violation(err):
@@ -793,6 +801,10 @@ class SingleResource(BaseResource):
                 # constraint violation
                 db_session.rollback()
                 raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
+            except sqlalchemy.orm.exc.StaleDataError as err:
+                # Version field in the model was not as expected
+                db_session.rollback()
+                raise falcon.errors.HTTPConflict('Conflict', 'Resource found but conditions violated')
             except sqlalchemy.exc.ProgrammingError as err:
                 db_session.rollback()
                 if self._is_unique_violation(err):

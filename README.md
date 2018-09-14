@@ -159,6 +159,12 @@ class AccountResource(SingleResource):
       # resource update.  Resource is the modified resource not yet saved to
       # the database.
       pass
+
+    def before_delete(self, req, resp, db_session, resource, *args, **kwargs):
+      # Anything you do with db_session is in the same transaction as the
+      # resource delete.  Resource is the resource to be deleted (or "marked as
+      deleted" - see section on "not really deleting").
+      pass
 ```
 
 ### Post-method functionality
@@ -283,6 +289,24 @@ class AccountResource(SingleResource):
         # Only allow deletes of non-owned accounts
         return query.filter(Account.owner == None)
 ```
+
+Note that there is an opportunity for a race condition here, where another
+process updates the row AFTER the check triggered by patch_precondition is run,
+but BEFORE the row update.  This would leave inconsistent data in your
+application if the other update would make the precondition no longer hold.
+
+To prevent this, you can simply add a [versioning
+column](http://docs.sqlalchemy.org/en/latest/orm/versioning.html) to your
+model.  When your model contains such a column, then as long as you have a
+precondition to check for the correct conditions before updating, you will be
+guaranteed that if another process changes the row in the meantime, you will
+fail to update, and a 409 response will be returned.  This doesn't necessarily
+mean the row no longer conforms to the precondition, so you can try the update
+again, and it will update if the precondition still holds.
+
+This versioning only helps you on an UPDATE, not a DELETE, so if you want a
+delete_precondition to be protected, you will need to use mark_deleted to
+update the row (see "not really deleting", next), instead of doing a true delete.
 
 ### Not really deleting
 
