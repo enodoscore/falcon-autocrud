@@ -167,7 +167,9 @@ class BaseResource(object):
 
         for key, value in path_data.items():
             key = getattr(self, 'attr_map', {}).get(key, key)
-            if getattr(model, key, None) is None or not isinstance(inspect(model).attrs[key], ColumnProperty):
+            if callable(key):
+                continue # Ignore, as it is only defined for lookup purposes
+            elif getattr(model, key, None) is None or not isinstance(inspect(model).attrs[key], ColumnProperty):
                 self.logger.error("Programming error: {0}.attr_map['{1}'] does not exist or is not a column".format(model, key))
                 raise falcon.errors.HTTPInternalServerError('Internal Server Error', 'An internal server error occurred')
             attributes[key] = value
