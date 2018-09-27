@@ -160,14 +160,32 @@ class BaseResource(object):
             attr: _serialize_value(attr, getattr(resource, attr)) for attr in response_fields if isinstance(attrs[attr], ColumnProperty)
         }
 
+    def _inbound_attribute(self, name):
+        attr_map = getattr(
+            self,
+            'inbound_attr_map',
+            getattr(self, 'attr_map', {})
+        )
+        return attr_map.get(name, name)
+
+    def _lookup_attribute(self, name):
+        attr_map = getattr(
+            self,
+            'lookup_attr_map',
+            getattr(self, 'attr_map', {})
+        )
+        return attr_map.get(name, name)
+
     def deserialize(self, model, path_data, body_data, allow_recursion=False):
         mapper          = inspect(model)
         attributes      = {}
         naive_datetimes = getattr(self, 'naive_datetimes', [])
 
         for key, value in path_data.items():
-            key = getattr(self, 'attr_map', {}).get(key, key)
-            if callable(key):
+            key = self._inbound_attribute(key)
+            if key is None:
+                continue
+            elif callable(key):
                 continue # Ignore, as it is only defined for lookup purposes
             elif getattr(model, key, None) is None or not isinstance(inspect(model).attrs[key], ColumnProperty):
                 self.logger.error("Programming error: {0}.attr_map['{1}'] does not exist or is not a column".format(model, key))
@@ -238,8 +256,10 @@ class BaseResource(object):
 
     def apply_arg_filter(self, req, resp, resources, kwargs):
         for key, value in kwargs.items():
-            key = getattr(self, 'attr_map', {}).get(key, key)
-            if callable(key):
+            key = self._lookup_attribute(key)
+            if key is None:
+                continue
+            elif callable(key):
                 resources = key(req, resp, resources, **kwargs)
             else:
                 attr = getattr(self.model, key, None)
@@ -471,7 +491,7 @@ class CollectionResource(BaseResource):
                         raise falcon.errors.HTTPBadRequest('Invalid patch', 'Patch {0} is not valid for op {1}'.format(index, patch['op']))
                     args = {}
                     for key, value in kwargs.items():
-                        key = getattr(self, 'attr_map', {}).get(key, key)
+                        key = self._inbound_attribute(key)
                         if getattr(model, key, None) is None or not isinstance(inspect(model).attrs[key], ColumnProperty):
                             self.logger.error("Programming error: {0}.attr_map['{1}'] does not exist or is not a column".format(model, key))
                             raise falcon.errors.HTTPInternalServerError('Internal Server Error', 'An internal server error occurred')

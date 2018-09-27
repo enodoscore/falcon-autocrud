@@ -38,7 +38,31 @@ class PutInsertEmployeeResource(EmployeeResource):
 class OtherEmployeeResource(SingleResource):
     model = Employee
     attr_map = {
-        'employee_id': 'id'
+        'employee_id': 'id',
+    }
+
+class MappedEmployeeCollectionResource(CollectionResource):
+    model = Employee
+    lookup_attr_map = {
+        'foo':          None,
+        'id':           'company_id',
+        'employee_id':  'id',
+    }
+    inbound_attr_map = {
+        'foo':  None,
+        'id':   'company_id',
+    }
+
+class MappedEmployeeResource(SingleResource):
+    model = Employee
+    lookup_attr_map = {
+        'foo':          None,
+        'id':           'company_id',
+        'employee_id': 'id',
+    }
+    inbound_attr_map = {
+        'foo':          None,
+        'employee_id': 'id',
     }
 
 class AutoCRUDTest(BaseTestCase):
@@ -49,6 +73,8 @@ class AutoCRUDTest(BaseTestCase):
         self.app.add_route('/employees/{id}', EmployeeResource(self.db_engine))
         self.app.add_route('/put-insert-employees/{id}', PutInsertEmployeeResource(self.db_engine))
         self.app.add_route('/put-insert-employees-by-company/{company_id}/{id}', PutInsertEmployeeResource(self.db_engine))
+        self.app.add_route('/{foo}/companies/{id}/mapped-employees', MappedEmployeeCollectionResource(self.db_engine))
+        self.app.add_route('/{foo}/companies/{id}/mapped-employees/{employee_id}', MappedEmployeeResource(self.db_engine))
 
     def test_empty_collection(self):
         response, = self.simulate_request('/employees', method='GET', headers={'Accept': 'application/json'})
@@ -172,6 +198,65 @@ class AutoCRUDTest(BaseTestCase):
             }
         )
 
+    def test_mapped_add_resource(self):
+        self.db_session.add(Company(id=1, name="Ameritech"))
+        self.db_session.add(Company(id=5, name="Initech"))
+        self.db_session.commit()
+
+        now = datetime.utcnow()
+        body = json.dumps({
+            'name': 'Alfred',
+            'joined': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'left': None,
+            'pay_rate': 25.40,
+            'start_time': '09:00:00',
+            'lunch_start': None,
+            'end_time': '17:00:30',
+            'company_id': 5,
+        })
+
+        response, = self.simulate_request('/bar/companies/5/mapped-employees', method='POST', body=body, headers={'Content-Type': 'application/json', 'Accept': 'application/json'})
+        self.assertEqual(self.srmock.status, '201 Created')
+        self.assertEqual(
+            json.loads(response.decode('utf-8')),
+            {
+                'data': {
+                    'id': 1,
+                    'name': 'Alfred',
+                    'joined': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    'left': None,
+                    'company_id': 5,
+                    'pay_rate': 25.40,
+                    'start_time': '09:00:00',
+                    'lunch_start': None,
+                    'end_time': '17:00:30',
+                    'caps_name': None,
+                },
+            }
+        )
+
+        response, = self.simulate_request('/employees', method='GET', headers={'Accept': 'application/json'})
+        self.assertEqual(self.srmock.status, '200 OK')
+        self.assertEqual(
+            json.loads(response.decode('utf-8')),
+            {
+                'data': [
+                    {
+                        'id':   1,
+                        'name': 'Alfred',
+                        'joined': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                        'left': None,
+                        'company_id': 5,
+                        'pay_rate': 25.40,
+                        'start_time': '09:00:00',
+                        'lunch_start': None,
+                        'end_time': '17:00:30',
+                        'caps_name': None,
+                    },
+                ]
+            }
+        )
+
     def test_add_resource_conflict(self):
         now     = datetime.utcnow()
         then    = now - timedelta(minutes=5)
@@ -253,6 +338,75 @@ class AutoCRUDTest(BaseTestCase):
                     'lunch_start': None,
                     'end_time': None,
                     'caps_name': 'PUT ALFRED',
+                },
+                {
+                    'id':   2,
+                    'name': 'Bob',
+                    'joined': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    'left': None,
+                    'company_id': None,
+                    'pay_rate': None,
+                    'start_time': None,
+                    'lunch_start': None,
+                    'end_time': None,
+                    'caps_name': None,
+                },
+            ]
+        )
+
+    def test_mapped_put_resource(self):
+        self.db_session.add(Company(id=1, name="Ameritech"))
+        self.db_session.add(Company(id=5, name="Initech"))
+        now = datetime.utcnow()
+        self.db_session.add(Employee(name="Jim", joined=now, company_id=5))
+        self.db_session.add(Employee(name="Bob", joined=now))
+        self.db_session.commit()
+
+        body = json.dumps({
+            'name':     'Alfred',
+            'joined':   '2015-11-01T09:30:12Z',
+            'left':     None,
+        })
+
+        response = self.simulate_request('/bar/companies/1/mapped-employees/2', method='PUT', body=body, headers={'Content-Type': 'application/json', 'Accept': 'application/json'})
+        self.assertEqual(self.srmock.status, '404 Not Found')
+
+        response, = self.simulate_request('/bar/companies/5/mapped-employees/1', method='PUT', body=body, headers={'Content-Type': 'application/json', 'Accept': 'application/json'})
+        self.assertEqual(self.srmock.status, '200 OK')
+        self.assertEqual(
+            json.loads(response.decode('utf-8')),
+            {
+                'data': {
+                    'id':   1,
+                    'name': 'Alfred',
+                    'joined': '2015-11-01T09:30:12Z',
+                    'left': None,
+                    'company_id': 5,
+                    'pay_rate': None,
+                    'start_time': None,
+                    'lunch_start': None,
+                    'end_time': None,
+                    'caps_name': None,
+                },
+            }
+        )
+
+        response, = self.simulate_request('/employees', method='GET', headers={'Accept': 'application/json'})
+        self.assertEqual(self.srmock.status, '200 OK')
+        self.assertEqual(
+            sorted(json.loads(response.decode('utf-8'))['data'], key=lambda x: x['id']),
+            [
+                {
+                    'id':   1,
+                    'name': 'Alfred',
+                    'joined': '2015-11-01T09:30:12Z',
+                    'left': None,
+                    'company_id': 5,
+                    'pay_rate': None,
+                    'start_time': None,
+                    'lunch_start': None,
+                    'end_time': None,
+                    'caps_name': None,
                 },
                 {
                     'id':   2,
@@ -562,6 +716,75 @@ class AutoCRUDTest(BaseTestCase):
                     'caps_name': 'PATCH JACK',
                 },
             }
+        )
+
+    def test_mapped_patch_resource(self):
+        self.db_session.add(Company(id=1, name="Ameritech"))
+        self.db_session.add(Company(id=5, name="Initech"))
+        now = datetime.utcnow()
+        self.db_session.add(Employee(name="Jim", joined=now, company_id=5))
+        self.db_session.add(Employee(name="Bob", joined=now))
+        self.db_session.commit()
+
+        body = json.dumps({
+            'name':     'Alfred',
+            'joined':   '2015-11-01T09:30:12Z',
+            'left':     None,
+        })
+
+        response = self.simulate_request('/bar/companies/1/mapped-employees/2', method='PATCH', body=body, headers={'Content-Type': 'application/json', 'Accept': 'application/json'})
+        self.assertEqual(self.srmock.status, '404 Not Found')
+
+        response, = self.simulate_request('/bar/companies/5/mapped-employees/1', method='PATCH', body=body, headers={'Content-Type': 'application/json', 'Accept': 'application/json'})
+        self.assertEqual(self.srmock.status, '200 OK')
+        self.assertEqual(
+            json.loads(response.decode('utf-8')),
+            {
+                'data': {
+                    'id':   1,
+                    'name': 'Alfred',
+                    'joined': '2015-11-01T09:30:12Z',
+                    'left': None,
+                    'company_id': 5,
+                    'pay_rate': None,
+                    'start_time': None,
+                    'lunch_start': None,
+                    'end_time': None,
+                    'caps_name': None,
+                },
+            }
+        )
+
+        response, = self.simulate_request('/employees', method='GET', headers={'Accept': 'application/json'})
+        self.assertEqual(self.srmock.status, '200 OK')
+        self.assertEqual(
+            sorted(json.loads(response.decode('utf-8'))['data'], key=lambda x: x['id']),
+            [
+                {
+                    'id':   1,
+                    'name': 'Alfred',
+                    'joined': '2015-11-01T09:30:12Z',
+                    'left': None,
+                    'company_id': 5,
+                    'pay_rate': None,
+                    'start_time': None,
+                    'lunch_start': None,
+                    'end_time': None,
+                    'caps_name': None,
+                },
+                {
+                    'id':   2,
+                    'name': 'Bob',
+                    'joined': now.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                    'left': None,
+                    'company_id': None,
+                    'pay_rate': None,
+                    'start_time': None,
+                    'lunch_start': None,
+                    'end_time': None,
+                    'caps_name': None,
+                },
+            ]
         )
 
     def test_patch_resource_conflict(self):

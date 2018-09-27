@@ -57,6 +57,22 @@ class CompanyEmployeeResource(SingleResource):
         'company_id':   lambda req, resp, query, *args, **kwargs: query.join(Employee.company).filter(Company.id == kwargs['company_id'])
     }
 
+class LookupCompanyEmployeeCollectionResource(CollectionResource):
+    model = Employee
+
+    lookup_attr_map = {
+        'foo':      None,
+        'coy_id':   lambda req, resp, query, *args, **kwargs: query.join(Employee.company).filter(Company.id == kwargs['coy_id'])
+    }
+
+class LookupCompanyEmployeeResource(SingleResource):
+    model = Employee
+
+    lookup_attr_map = {
+        'foo':      None,
+        'coy_id':   lambda req, resp, query, *args, **kwargs: query.join(Employee.company).filter(Company.id == kwargs['coy_id'])
+    }
+
 
 class PreconditionTest(BaseTestCase):
     def create_test_resources(self):
@@ -66,6 +82,8 @@ class PreconditionTest(BaseTestCase):
         self.app.add_route('/employees3/{id}', ProgrammaticallyLimitedLinkEmployeeResource(self.db_engine))
         self.app.add_route('/companies/{company_id}/employees', CompanyEmployeeCollectionResource(self.db_engine))
         self.app.add_route('/companies/{company_id}/employees/{id}', CompanyEmployeeResource(self.db_engine))
+        self.app.add_route('/new/{foo}/companies/{coy_id}/employees', LookupCompanyEmployeeCollectionResource(self.db_engine))
+        self.app.add_route('/new/{foo}/companies/{coy_id}/employees/{id}', LookupCompanyEmployeeResource(self.db_engine))
 
     def create_common_fixtures(self):
         self.db_session.add(Company(id=1, name="Initech"))
@@ -366,4 +384,123 @@ class PreconditionTest(BaseTestCase):
         )
 
         response = self.simulate_request('/companies/1/employees/3', method='GET', headers={'Accept': 'application/json'})
+        self.assertNotFound(response)
+
+    def test_collection_lookup_attr_map(self):
+        response, = self.simulate_request('/new/{bar}/companies/1/employees', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(
+            response,
+            {
+               "data" : [
+                  {
+                     "id":          1,
+                     "company_id":  1,
+                     "name":        "Jim",
+                     "caps_name":   None,
+                     "end_time":    None,
+                     "joined":      None,
+                     "left":        None,
+                     "lunch_start": None,
+                     "pay_rate":    None,
+                     "start_time":  None,
+                  },
+                  {
+                     "id":          2,
+                     "company_id":  1,
+                     "name":        "Bob",
+                     "caps_name":   None,
+                     "end_time":    None,
+                     "joined":      None,
+                     "left":        None,
+                     "lunch_start": None,
+                     "pay_rate":    None,
+                     "start_time":  None,
+                  },
+                  {
+                     "id":          5,
+                     "company_id":  1,
+                     "name":        "Jane",
+                     "caps_name":   None,
+                     "end_time":    None,
+                     "joined":      None,
+                     "left":        None,
+                     "lunch_start": None,
+                     "pay_rate":    None,
+                     "start_time":  None,
+                  }
+               ]
+            }
+        )
+
+        response, = self.simulate_request('/new/{bar}/companies/2/employees', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(
+            response,
+            {
+               "data" : [
+                  {
+                     "id":          3,
+                     "company_id":  2,
+                     "name":        "Jack",
+                     "caps_name":   None,
+                     "end_time":    None,
+                     "joined":      None,
+                     "left":        None,
+                     "lunch_start": None,
+                     "pay_rate":    None,
+                     "start_time":  None,
+                  },
+                  {
+                     "id":          4,
+                     "company_id":  2,
+                     "name":        "Alice",
+                     "caps_name":   None,
+                     "end_time":    None,
+                     "joined":      None,
+                     "left":        None,
+                     "lunch_start": None,
+                     "pay_rate":    None,
+                     "start_time":  None,
+                  },
+               ]
+            }
+        )
+
+        response, = self.simulate_request('/new/{bar}/companies/1/employees/1', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(
+            response,
+            {
+                "data" : {
+                    "id":          1,
+                    "company_id":  1,
+                    "name":        "Jim",
+                    "caps_name":   None,
+                    "end_time":    None,
+                    "joined":      None,
+                    "left":        None,
+                    "lunch_start": None,
+                    "pay_rate":    None,
+                    "start_time":  None,
+                }
+            }
+        )
+        response, = self.simulate_request('/new/{bar}/companies/2/employees/3', method='GET', headers={'Accept': 'application/json'})
+        self.assertOK(
+            response,
+            {
+                "data" : {
+                    "id":          3,
+                    "company_id":  2,
+                    "name":        "Jack",
+                    "caps_name":   None,
+                    "end_time":    None,
+                    "joined":      None,
+                    "left":        None,
+                    "lunch_start": None,
+                    "pay_rate":    None,
+                    "start_time":  None,
+                }
+            }
+        )
+
+        response = self.simulate_request('/new/{bar}/companies/1/employees/3', method='GET', headers={'Accept': 'application/json'})
         self.assertNotFound(response)

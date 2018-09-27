@@ -381,13 +381,14 @@ class EmployeeCollectionResource(CollectionResource):
         return query
 ```
 
-Alternatively, for arguments that are part of the URL you may use attr_map directly:
+Alternatively, for arguments that are part of the URL you may use
+lookup_attr_map directly (note that attr_map is now deprecated - see below):
 
 ```
 class CompanyEmployeeCollectionResource(CollectionResource):
     model = Employee
 
-    attr_map = {
+    lookup_attr_map = {
         'company_id':   lambda req, resp, query, *args, **kwargs: query.join(Employee.company).filter(Company.id == kwargs['company_id'])
     }
 
@@ -398,6 +399,54 @@ This is useful for the following sort of URL:
 ```
 GET /companies/{company_id}/employees
 ```
+
+### Mapping
+
+Mapping used to be done with attr_map.  This is now deprecated in favour of
+lookup_attr_map and inbound_attr_map (since attr_map was used for two different
+purposes before).
+
+To look up an entry via part of the URL:
+
+```
+GET /companies/{company_id}/employees
+```
+
+Use the name of the column to map to:
+
+```
+class CompanyEmployeeCollectionResource(CollectionResource):
+    model = Employee
+
+    lookup_attr_map = {
+        'company_id': 'coy_id'
+    }
+```
+
+Or use a lambda to return a modified query:
+
+```
+class CompanyEmployeeCollectionResource(CollectionResource):
+    model = Employee
+
+    lookup_attr_map = {
+        'company_id': lambda req, resp, query, *args, **kwargs: query.join(Employee.company).filter(Company.id == kwargs['company_id'])
+    }
+```
+
+You may use inbound_attr_map to specify mappings to place the value from a URL component into another field:
+
+```
+class CompanyEmployeeCollectionResource(CollectionResource):
+    model = Employee
+
+    inbound_attr_map = {
+        'company_id': 'coy_id'
+    }
+```
+
+Both lookup_attr_map and inbound_attr_map may have a mapping value set to None,
+in which case the mapping key in the URL component is ignored.
 
 ### Sorting
 
