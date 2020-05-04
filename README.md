@@ -752,7 +752,7 @@ the resource, return None from `resource_meta` or `meta` functions.
 
 Note that the request body can be accessed (e.g. in pre-method functionality
 function) either from `req.context['doc']` (as JSON), or the original binary
-body content is available in req.context['request_body'] if you specify that
+body content is available in `req.context['request_body']` if you specify that
 the HTTP method should retain it:
 
 ```
