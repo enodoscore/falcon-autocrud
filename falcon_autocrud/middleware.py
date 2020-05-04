@@ -65,6 +65,9 @@ class Middleware(object):
                     'A valid JSON document is required'
                 )
 
+            if req.method in getattr(resource, 'keep_request_body', []):
+                req.context['request_body'] = body
+
             schema = _get_request_schema(req, resource)
             try:
                 req.context['doc'] = json.loads(body.decode('utf-8'))

@@ -747,3 +747,16 @@ The advantage of using the above method is that the keys can also be determined
 at runtime, and may change in difference circumstances (e.g. according to query
 parameters, or the permissions of the caller).  To include NO meta at all for
 the resource, return None from `resource_meta` or `meta` functions.
+
+### Access to submitted data
+
+Note that the request body can be accessed (e.g. in pre-method functionality
+function) either from `req.context['doc']` (as JSON), or the original binary
+body content is available in req.context['request_body'] if you specify that
+the HTTP method should retain it:
+
+```
+class TeamResource(CollectionResource):
+  model = Team
+  keep_request_body = ['POST']
+```
