@@ -58,7 +58,7 @@ class Middleware(object):
                 raise falcon.HTTPUnsupportedMediaType('This API supports only JSON-encoded requests')
 
         if req.content_type is not None and 'application/json' in req.content_type:
-            body = req.stream.read(req.content_length or 0)
+            body = req.env['wsgi.input'].peek(req.content_length or 0)
 
             if not body:
                 raise falcon.HTTPBadRequest(
