@@ -58,7 +58,8 @@ class Middleware(object):
                 raise falcon.HTTPUnsupportedMediaType('This API supports only JSON-encoded requests')
 
         if req.content_type is not None and 'application/json' in req.content_type:
-            body = req.stream.read()
+            body = req.stream.read(req.content_length or 0)
+
             if not body:
                 raise falcon.HTTPBadRequest(
                     'Empty request body',
@@ -88,11 +89,15 @@ class Middleware(object):
                         json.dumps({'error': str(error)})
                     )
 
-    def process_response(self, req, resp, resource):
+    def process_response(self, req, resp, resource, req_succeeded):
         if 'result' not in req.context:
             return
 
-        resp.body = json.dumps(req.context['result'])
+        result = req.context['result']
+        if 'data' in result and not 'meta' in result:
+            resp.body = json.dumps(result['data'])
+        else:
+            resp.body = json.dumps(result)
 
         schema = _get_response_schema(resource, req)
         if schema is None:
