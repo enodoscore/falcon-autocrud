@@ -30,7 +30,7 @@ setup(name='falcon-autocrud',
       keywords='falcon crud rest database',
       packages=['falcon_autocrud'],
       install_requires=[
-          'falcon >= 1.0.0, < 2.0.0',
+          'falcon >= 1.0.0, <= 2.0.0',
           'jsonschema',
           'sqlalchemy',
       ],
