@@ -3,7 +3,6 @@ from decimal import Decimal
 import falcon
 import falcon.errors
 import itertools
-import json
 import sqlalchemy.exc
 import sqlalchemy.orm.exc
 from sqlalchemy.orm import sessionmaker
@@ -13,7 +12,6 @@ from sqlalchemy.orm.session import make_transient
 import sqlalchemy.sql.sqltypes
 import uuid
 import logging
-import sys
 
 from .db_session import session_scope
 
@@ -118,8 +116,10 @@ class BaseResource(object):
 
     def serialize(self, resource, response_fields=None, geometry_axes=None):
         attrs           = inspect(resource.__class__).attrs
-        naive_datetimes = getattr(self, 'naive_datetimes', [])
+
         def _serialize_value(name, value):
+            if isinstance(value, list):
+                return [_serialize_value('', val) for val in value]
             if isinstance(value, uuid.UUID):
                 return value.hex
             if isinstance(value, datetime):
@@ -175,24 +175,11 @@ class BaseResource(object):
             getattr(self, 'attr_map', {})
         )
         return attr_map.get(name, name)
-
-    def deserialize(self, model, path_data, body_data, allow_recursion=False):
-        mapper          = inspect(model)
-        attributes      = {}
-        naive_datetimes = getattr(self, 'naive_datetimes', [])
-
-        for key, value in path_data.items():
-            key = self._inbound_attribute(key)
-            if key is None:
-                continue
-            elif callable(key):
-                continue # Ignore, as it is only defined for lookup purposes
-            elif getattr(model, key, None) is None or not isinstance(inspect(model).attrs[key], ColumnProperty):
-                self.logger.error("Programming error: {0}.attr_map['{1}'] does not exist or is not a column".format(model, key))
-                raise falcon.errors.HTTPInternalServerError('Internal Server Error', 'An internal server error occurred')
-            attributes[key] = value
-
-        deserialized = [attributes, {}]
+    
+    def parse_body_dict(self, model, allow_recursion, body_data):
+        attributes          = {}
+        linked_attributes   = {}
+        mapper              = inspect(model)
 
         for key, value in body_data.items():
             if isinstance(getattr(model, key, None), property):
@@ -210,10 +197,9 @@ class BaseResource(object):
                 try:
                     relationship = mapper.relationships[key]
                     if relationship.uselist:
-                        for entity in value:
-                            deserialized[1][key] = [self.deserialize(relationship.mapper.entity, {}, entity, False)[0] for entity in value]
+                        linked_attributes[key] = [ self.parse_body_dict(relationship.mapper.entity, False, entity)[0] for entity in value ] # TODO: Test this with a relational sqlalchemy model
                     else:
-                        deserialized[1][key] = self.deserialize(relationship.mapper.entity, {}, value, False)[0]
+                        linked_attributes[key] = self.parse_body_dict(relationship.mapper.entity, False, value)[0] # TODO: Test this with a relational sqlalchemy model
                     continue
                 except KeyError:
                     # Assume programmer has done their job of filtering out invalid
@@ -252,6 +238,34 @@ class BaseResource(object):
                 attributes[key] = WKBElement(polygon.wkb, srid=4326)
             else:
                 attributes[key] = value
+
+        return (attributes, linked_attributes)
+    
+    def parse_path_dict(self, model, path_data):
+        path_attributes      = {}
+
+        for key, value in path_data.items():
+            key = self._inbound_attribute(key)
+            if key is None:
+                continue
+            elif callable(key):
+                continue # Ignore, as it is only defined for lookup purposes
+            elif getattr(model, key, None) is None or not isinstance(inspect(model).attrs[key], ColumnProperty):
+                self.logger.error("Programming error: {0}.attr_map['{1}'] does not exist or is not a column".format(model, key))
+                raise falcon.errors.HTTPInternalServerError('Internal Server Error', 'An internal server error occurred')
+            path_attributes[key] = value
+
+        return path_attributes
+
+    def deserialize(self, model, path_data, body_data, allow_recursion=False):
+        to_parse = [body_data] if type(body_data) is not list else body_data
+
+        deserialized = [self.parse_body_dict(model, allow_recursion, body_dict) for body_dict in to_parse]
+        path_attributes = self.parse_path_dict(model, path_data)
+        for attributes, _ in deserialized:
+            for key, val in path_attributes.items():
+                attributes[key] = val
+
         return deserialized
 
     def apply_arg_filter(self, req, resp, resources, kwargs):
@@ -392,29 +406,35 @@ class CollectionResource(BaseResource):
         if 'POST' not in getattr(self, 'methods', ['GET', 'POST', 'PATCH']):
             raise falcon.errors.HTTPMethodNotAllowed(getattr(self, 'methods', ['GET', 'POST', 'PATCH']))
 
-        attributes, linked = self.deserialize(self.model, kwargs, req.context['doc'] if 'doc' in req.context else None, getattr(self, 'allow_subresources', False))
+        attributes_list = self.deserialize(self.model, kwargs, req.context['doc'] if 'doc' in req.context else None, getattr(self, 'allow_subresources', False))
 
         with session_scope(self.db_engine, sessionmaker_=self.sessionmaker, **self.sessionmaker_kwargs) as db_session:
-            self.apply_default_attributes('post_defaults', req, resp, attributes)
+            single_entity = len(attributes_list) == 1
 
-            resource = self.model(**attributes)
+            for attribute_dict, _ in attributes_list:
+                self.apply_default_attributes('post_defaults', req, resp, attribute_dict)
+
+            resources = [self.model(**attribute_dict) for attribute_dict, _ in attributes_list]
 
             before_post = getattr(self, 'before_post', None)
             if before_post is not None:
-                self.before_post(req, resp, db_session, resource, *args, **kwargs)
+                self.before_post(req, resp, db_session, resources[0] if single_entity else resources, *args, **kwargs)
 
-            db_session.add(resource)
-            mapper = inspect(self.model)
-            for key, value in linked.items():
-                relationship = mapper.relationships[key]
-                resource_class = relationship.mapper.entity
-                if relationship.uselist:
-                    for attributes in value:
-                        subresource = resource_class(**attributes)
-                        getattr(resource, key).append(subresource)
-                else:
-                    subresource = resource_class(**value)
-                    setattr(resource, key, subresource)
+            for resource in resources:
+                db_session.add(resource)
+
+            # mapper = inspect(self.model) TODO: Figure out how linked resources work and fix this -CSM
+            # for key, value in linked.items():
+            #     relationship = mapper.relationships[key]
+            #     resource_class = relationship.mapper.entity
+            #     if relationship.uselist:
+            #         for attributes in value:
+            #             subresource = resource_class(**attributes)
+            #             getattr(resource, key).append(subresource)
+            #     else:
+            #         subresource = resource_class(**value)
+            #         setattr(resource, key, subresource)
+
             try:
                 db_session.commit()
             except sqlalchemy.exc.IntegrityError as err:
@@ -435,13 +455,17 @@ class CollectionResource(BaseResource):
                 raise
 
             resp.status = falcon.HTTP_CREATED
+            response_fields = _get_response_fields(self, req, resp, resources[0], *args, **kwargs)
+            geometry_axes = getattr(self, 'geometry_axes', {})
+            processed_data = [ self.serialize(resource, response_fields, geometry_axes) for resource in resources ]
+
             req.context['result'] = {
-                'data': self.serialize(resource, _get_response_fields(self, req, resp, resource, *args, **kwargs), getattr(self, 'geometry_axes', {})),
+                'data': processed_data[0] if single_entity else processed_data
             }
 
             after_post = getattr(self, 'after_post', None)
             if after_post is not None:
-                after_post(req, resp, resource)
+                after_post(req, resp, resources[0] if single_entity else resources)
 
     @falcon.before(identify)
     @falcon.before(authorize)
@@ -725,10 +749,15 @@ class SingleResource(BaseResource):
 
             is_new = resource is None
             if is_new:
-                attributes, linked = self.deserialize(self.model, kwargs, req.context['doc'], False)
+                attributes_list = self.deserialize(self.model, kwargs, req.context['doc'], False)
                 resource = self.model()
             else:
-                attributes, linked = self.deserialize(self.model, {}, req.context['doc'], False)
+                attributes_list = self.deserialize(self.model, {}, req.context['doc'], False)
+
+            if len(attributes_list) > 1:
+                raise falcon.errors.HTTPBadRequest('Invalid Request Body', 'Array bodies are only allowed with POST requests')
+            attributes = attributes_list[0][0]
+
             self.apply_default_attributes('put_defaults', req, resp, attributes)
 
             for key, value in attributes.items():
@@ -800,7 +829,11 @@ class SingleResource(BaseResource):
             except sqlalchemy.orm.exc.NoResultFound:
                 raise falcon.errors.HTTPConflict('Conflict', 'Resource found but conditions violated')
 
-            attributes, linked = self.deserialize(self.model, {}, req.context['doc'], False)
+            attributes_list = self.deserialize(self.model, {}, req.context['doc'], False)
+
+            if len(attributes_list) > 1:
+                raise falcon.errors.HTTPBadRequest('Invalid Request Body', 'Array bodies are only allowed with POST requests')
+            attributes = attributes_list[0][0]
 
             self.apply_default_attributes('patch_defaults', req, resp, attributes)
 
