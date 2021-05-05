@@ -74,6 +74,14 @@ class BaseResource(object):
             logger = logging.getLogger('autocrud')
         self.logger = logger
 
+    def param_string_to_list(self, value: str):
+        if not value.startswith('[') or not value.endswith(']'):
+            raise falcon.errors.HTTPBadRequest('Invalid attribute', f'Query __in filter value \'{value}\' is an invalid list string. Lists should be formatted as [a,b,c].')
+        value = value[1:-1]
+        if value == '':
+            raise falcon.errors.HTTPBadRequest('Invalid attribute', f'Query __in filter provided an empty list string. Please omit unused parameters.')
+        return value.split(',')
+
     def filter_by_params(self, resources, params):
         for filter_key, value in params.items():
             if filter_key.startswith('__'):
@@ -101,8 +109,16 @@ class BaseResource(object):
                     resources = resources.filter(attr.isnot(None))
             elif comparison == 'startswith':
                 resources = resources.filter(attr.like('{0}%'.format(value)))
+            elif comparison == 'istartswith':
+                resources = resources.filter(attr.ilike('{0}%'.format(value)))
+            elif comparison == 'endswith':
+                resources = resources.filter(attr.like('%{0}'.format(value)))
+            elif comparison == 'iendswith':
+                resources = resources.filter(attr.ilike('%{0}'.format(value)))
             elif comparison == 'contains':
                 resources = resources.filter(attr.like('%{0}%'.format(value)))
+            elif comparison == 'icontains':
+                resources = resources.filter(attr.ilike('%{0}%'.format(value)))
             elif comparison == 'lt':
                 resources = resources.filter(attr < value)
             elif comparison == 'lte':
@@ -111,6 +127,8 @@ class BaseResource(object):
                 resources = resources.filter(attr > value)
             elif comparison == 'gte':
                 resources = resources.filter(attr >= value)
+            elif comparison == 'in':
+                resources = resources.filter(attr.in_(self.param_string_to_list(value)))
             else:
                 raise falcon.errors.HTTPBadRequest('Invalid attribute', 'An attribute provided for filtering is invalid')
         return resources
