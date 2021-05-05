@@ -123,8 +123,13 @@ class BaseResource(object):
             if isinstance(value, uuid.UUID):
                 return value.hex
             if isinstance(value, datetime):
-                if name in naive_datetimes:
+                if name in getattr(self, 'naive_datetimes', []): # List of naive datetime columns:
                     return value.strftime('%Y-%m-%dT%H:%M:%S')
+                elif name in getattr(self, 'datetime_in_ms', []): # List of datetime columns to keep as ms since Unix epoch:
+                    try:
+                        return int(mktime(value.timetuple()))
+                    except:
+                        return None
                 else:
                     return value.strftime('%Y-%m-%dT%H:%M:%SZ')
             elif isinstance(value, date):
@@ -209,7 +214,9 @@ class BaseResource(object):
             if isinstance(column.type, sqlalchemy.sql.sqltypes.DateTime):
                 if value is None:
                     attributes[key] = None
-                elif key in naive_datetimes:
+                elif key in getattr(self, 'datetime_in_ms', []): # List of datetime columns to keep as ms since Unix epoch
+                    attributes[key] = datetime.fromtimestamp(value)
+                elif key in getattr(self, 'naive_datetimes', []): # List of naive datetime columns
                     attributes[key] = datetime.strptime(value, '%Y-%m-%dT%H:%M:%S')
                 else:
                     attributes[key] = datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ')
