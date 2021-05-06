@@ -471,7 +471,7 @@ The caller can specify an offset and/or limit to collection GET to provide
 paging of search results.
 
 ```
-GET /path/to/collection?__offset=10&limit=10
+GET /path/to/collection?__offset=10&__limit=10
 ```
 
 This is generally most useful in combination with __sort to ensure consistency
@@ -603,7 +603,8 @@ the time zone is not relevant, and the "real" date/time is simply in the local
 time zone, whatever that might be - i.e. the client can treat is as being in
 their own localtime.
 
-For cases such as this, simply list the field among the naive datetimes like so:
+For cases such as this, set the naive_datetimes class variable as a list of the
+column names to be treated as naive datetimes:
 
 ```
 class PublicHolidayCollectionResource(CollectionResource):
@@ -613,6 +614,16 @@ class PublicHolidayCollectionResource(CollectionResource):
 
 These fields will then be parsed and returned in the format
 'YYYY-mm-ddTHH:MM:SS', i.e. without the 'Z' suffix.
+
+Additionally, when a numeric datetime is desired rather than a a datetime string,
+you can similarly specify that the resource should treat any input and output
+as a number representing milliseconds since the Unix epoch.
+
+```
+class DeadlineCollectionResource(CollectionResource):
+    model = Deadlines
+    datetime_in_ms = ['started_on', 'due_by']
+```
 
 ### Meta-information
 
