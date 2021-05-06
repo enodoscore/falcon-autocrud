@@ -6,17 +6,6 @@ Makes RESTful CRUD easier.
 
 [ ![Codeship Status for garymonson/falcon-autocrud](https://codeship.com/projects/ed5bb4c0-b517-0133-757f-3e023a4cadff/status?branch=master)](https://codeship.com/projects/134046)
 
-## IMPORTANT CHANGE IN 1.0.0
-
-Previously, the CollectionResource and SingleResource classes took db_session
-as a parameter to the constructor.  As of 1.0.0, they now take db_engine
-instead.  The reason for this is to keep the sessions short-lived and under
-autocrud's control to explicitly close the sessions.
-
-This WILL impact you as your routing should now pass the db_engine instead of
-the db_session, and if you override these classes, then, if you have overridden
-the constructor, you may also have to update that.
-
 ## Quick start for contributing
 
 ```
@@ -97,6 +86,11 @@ http GET http://localhost/employees?age__lt=25
 http GET http://localhost/employees?age__lte=24
 http GET http://localhost/employees?name__contains=John
 http GET http://localhost/employees?name__startswith=John
+http GET http://localhost/employees?name__endswith=Smith
+http GET http://localhost/employees?name__icontains=john
+http GET http://localhost/employees?name__istartswith=john
+http GET http://localhost/employees?name__iendswith=smith
+http GET http://localhost/employees?name__in=[Grace Hopper,Ada Lovelace]
 http GET http://localhost/employees?company_id__null=1
 http GET http://localhost/employees?company_id__null=0
 echo '{"name": "Jim"}' | http POST http://localhost/employees
@@ -104,8 +98,8 @@ http GET http://localhost/employees/100
 echo '{"name": "Jim"}' | http PUT http://localhost/employees/100
 echo '{"name": "Jim"}' | http PATCH http://localhost/employees/100
 http DELETE http://localhost/employees/100
-# PATCHing a collection to add entities in bulk
-echo '{"patches": [{"op": "add", "path": "/", "value": {"name": "Jim"}}]}' | http PATCH http://localhost/employees
+# POST an array to add entities in bulk
+echo '[{"name": "Carol"}, {"name": "Elisa"}]' | http POST http://localhost/employees
 ```
 
 Note that by default, PUT will only update, and will not insert a new resource
