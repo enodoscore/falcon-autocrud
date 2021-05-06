@@ -221,9 +221,9 @@ class BaseResource(object):
                 try:
                     relationship = mapper.relationships[key]
                     if relationship.uselist:
-                        linked_attributes[key] = [ self.parse_body_dict(relationship.mapper.entity, False, entity)[0] for entity in value ] # TODO: Test this with a relational sqlalchemy model
+                        linked_attributes[key] = [ self.parse_body_dict(relationship.mapper.entity, False, entity)[0] for entity in value ]
                     else:
-                        linked_attributes[key] = self.parse_body_dict(relationship.mapper.entity, False, value)[0] # TODO: Test this with a relational sqlalchemy model
+                        linked_attributes[key] = self.parse_body_dict(relationship.mapper.entity, False, value)[0]
                     continue
                 except KeyError:
                     # Assume programmer has done their job of filtering out invalid
@@ -292,7 +292,7 @@ class BaseResource(object):
             for key, val in path_attributes.items():
                 attributes[key] = val
 
-        return deserialized
+        return list(zip(*deserialized))
 
     def apply_arg_filter(self, req, resp, resources, kwargs):
         for key, value in kwargs.items():
@@ -432,15 +432,15 @@ class CollectionResource(BaseResource):
         if 'POST' not in getattr(self, 'methods', ['GET', 'POST', 'PATCH']):
             raise falcon.errors.HTTPMethodNotAllowed(getattr(self, 'methods', ['GET', 'POST', 'PATCH']))
 
-        attributes_list = self.deserialize(self.model, kwargs, req.context['doc'] if 'doc' in req.context else None, getattr(self, 'allow_subresources', False))
+        attributes, linked_attributes = self.deserialize(self.model, kwargs, req.context['doc'] if 'doc' in req.context else None, getattr(self, 'allow_subresources', False))
 
         with session_scope(self.db_engine, sessionmaker_=self.sessionmaker, **self.sessionmaker_kwargs) as db_session:
-            single_entity = len(attributes_list) == 1
+            single_entity = len(attributes) == 1
 
-            for attribute_dict, _ in attributes_list:
+            for attribute_dict in attributes:
                 self.apply_default_attributes('post_defaults', req, resp, attribute_dict)
 
-            resources = [self.model(**attribute_dict) for attribute_dict, _ in attributes_list]
+            resources = [self.model(**attribute_dict) for attribute_dict in attributes]
 
             before_post = getattr(self, 'before_post', None)
             if before_post is not None:
@@ -449,17 +449,16 @@ class CollectionResource(BaseResource):
             for resource in resources:
                 db_session.add(resource)
 
-            # mapper = inspect(self.model) TODO: Figure out how linked resources work and fix this -CSM
-            # for key, value in linked.items():
-            #     relationship = mapper.relationships[key]
-            #     resource_class = relationship.mapper.entity
-            #     if relationship.uselist:
-            #         for attributes in value:
-            #             subresource = resource_class(**attributes)
-            #             getattr(resource, key).append(subresource)
-            #     else:
-            #         subresource = resource_class(**value)
-            #         setattr(resource, key, subresource)
+            mapper = inspect(self.model)
+            for resource, linked in zip(resources, linked_attributes):
+                for key, value in linked.items():
+                    relationship = mapper.relationships[key]
+                    resource_class = relationship.mapper.entity
+                    if relationship.uselist:
+                        setattr(resource, key, [ resource_class(**attributes) for attributes in value ])
+                    else:
+                        subresource = resource_class(**value)
+                        setattr(resource, key, subresource)
 
             try:
                 db_session.commit()
@@ -775,14 +774,14 @@ class SingleResource(BaseResource):
 
             is_new = resource is None
             if is_new:
-                attributes_list = self.deserialize(self.model, kwargs, req.context['doc'], False)
+                attributes, _ = self.deserialize(self.model, kwargs, req.context['doc'], False)
                 resource = self.model()
             else:
-                attributes_list = self.deserialize(self.model, {}, req.context['doc'], False)
+                attributes, _ = self.deserialize(self.model, {}, req.context['doc'], False)
 
-            if len(attributes_list) > 1:
+            if len(attributes) > 1:
                 raise falcon.errors.HTTPBadRequest('Invalid Request Body', 'Array bodies are only allowed with POST requests')
-            attributes = attributes_list[0][0]
+            attributes = attributes[0]
 
             self.apply_default_attributes('put_defaults', req, resp, attributes)
 
@@ -855,11 +854,11 @@ class SingleResource(BaseResource):
             except sqlalchemy.orm.exc.NoResultFound:
                 raise falcon.errors.HTTPConflict('Conflict', 'Resource found but conditions violated')
 
-            attributes_list = self.deserialize(self.model, {}, req.context['doc'], False)
+            attributes, _ = self.deserialize(self.model, {}, req.context['doc'], False)
 
-            if len(attributes_list) > 1:
+            if len(attributes) > 1:
                 raise falcon.errors.HTTPBadRequest('Invalid Request Body', 'Array bodies are only allowed with POST requests')
-            attributes = attributes_list[0][0]
+            attributes = attributes[0]
 
             self.apply_default_attributes('patch_defaults', req, resp, attributes)
 
