@@ -59,7 +59,6 @@ class Middleware(object):
 
         if req.content_type is not None and 'application/json' in req.content_type:
             body = req.stream.read(req.content_length or 0)
-            req._media = body
 
             if not body:
                 raise falcon.HTTPBadRequest(
@@ -80,6 +79,7 @@ class Middleware(object):
                         'Could not decode the request body.  The JSON was incorrect or not encoded as UTF-8'
                     )
                 req.context['doc'] = body
+            req._media = req.context['doc']
 
             if schema is not None:
                 try:
