@@ -1,6 +1,13 @@
-# Falcon-AutoCRUD for Falcon 2.0.0
+# Bionic Falcon -- Automated CRUD operations for Falcon 2
 
 Makes RESTful CRUD easier.
+
+## Acknowledgements
+
+This is a Falcon 2 compatible adaptation of Gary Monson's Falcon AutoCRUD
+package -- huge props to him for building out an amazing set of features!
+I very much plan to keep this package in the same spirit and format as
+the original.
 
 ## Quick start for contributing
 
@@ -17,7 +24,7 @@ pg8000), you must have a Postgres server running, and a postgres user with
 permission to create databases:
 
 ```
-export AUTOCRUD_DSN=postgresql+pg8000://myuser:mypassword@localhost:5432
+export BIONIC_DSN=postgresql+pg8000://myuser:mypassword@localhost:5432
 nosetests
 ```
 
@@ -44,7 +51,7 @@ class Employee(Base):
 Declare your resources:
 
 ```
-from falcon_autocrud.resource import CollectionResource, SingleResource
+from bionic_falcon.resource import CollectionResource, SingleResource
 
 class EmployeeCollectionResource(CollectionResource):
     model = Employee
@@ -59,7 +66,7 @@ classes:
 ```
 from sqlalchemy import create_engine
 import falcon
-from falcon_autocrud.middleware import Middleware
+from bionic_falcon.middleware import Middleware
 
 db_engine = create_engine('sqlite:///stuff.db')
 
@@ -343,7 +350,7 @@ If you want to add query parameters to your collection queries, that do not
 refer to a resource attribute, but which refer to an attribute in a linked
 table, you can do this in get_filter, as with the below example.  Ensure that
 you remove the extra parameter value from req.params before returning from
-get_filter, as falcon-autocrud will try (and fail) to look up the parameter in
+get_filter, as bionic-falcon will try (and fail) to look up the parameter in
 the main resource class.
 
 ```

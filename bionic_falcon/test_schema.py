@@ -248,7 +248,7 @@ class IOTest(unittest.TestCase):
         # Programming error is logged
         self.assertEqual(
             [self.handler.logs[0].message],
-            ["""Blocking proposed response from being sent from falcon_autocrud.test_schema.BadResource.on_post to client as it does not match the defined schema: 'email' is a required property
+            ["""Blocking proposed response from being sent from bionic_falcon.test_schema.BadResource.on_post to client as it does not match the defined schema: 'email' is a required property
 
 Failed validating 'required' in schema:
     {'properties': {'email': {'type': 'string'}},
@@ -299,7 +299,7 @@ On instance:
         # Programming error is logged
         self.assertEqual(
             [self.handler.logs[0].message],
-            ["""Blocking proposed response from being sent from falcon_autocrud.test_schema.BadChildResource.on_post to client as it does not match the defined schema: 'email' is a required property
+            ["""Blocking proposed response from being sent from bionic_falcon.test_schema.BadChildResource.on_post to client as it does not match the defined schema: 'email' is a required property
 
 Failed validating 'required' in schema:
     {'properties': {'email': {'type': 'string'}},

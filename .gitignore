@@ -1,2 +1,7 @@
 virtualenv
 *.swp
+pyproject.toml
+venv
+dist
+build
+bionic_falcon.egg-info

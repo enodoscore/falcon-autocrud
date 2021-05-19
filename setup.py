@@ -2,19 +2,16 @@ from setuptools import setup
 
 version = '1.0.37'
 
-try:
-    import pypandoc
-    long_description = pypandoc.convert('README.md', 'rst')
-except (IOError, ImportError):
-    long_description = open('README.md').read()
+with open('README.rst', 'r') as file:
+    long_description = file.read()
 
-setup(name='falcon-autocrud',
+setup(name='bionic-falcon',
       version=version,
-      description='Makes RESTful CRUD easier',
+      description='Automate CRUD actions with a Falcon API',
       long_description=long_description,
-      url='https://bitbucket.org/garymonson/falcon-autocrud',
-      author='Gary Monson',
-      author_email='gary.monson@gmail.com',
+      url='https://github.com/enodoscore/falcon-autocrud',
+      author='Gary Monson, Cami McCarthy',
+      author_email='camilla@enodoinc.com',
       license='MIT',
       classifiers=[
           'Development Status :: 4 - Beta',
@@ -28,7 +25,7 @@ setup(name='falcon-autocrud',
           'Topic :: Internet :: WWW/HTTP :: WSGI :: Middleware',
       ],
       keywords='falcon crud rest database',
-      packages=['falcon_autocrud'],
+      packages=['bionic_falcon'],
       install_requires=[
           'falcon >= 2.0.0, <= 3.0.0',
           'jsonschema',

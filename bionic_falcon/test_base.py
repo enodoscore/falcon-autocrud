@@ -31,10 +31,10 @@ class BaseTestCase(unittest.TestCase):
 
         if not self.using_sqlite:
             Session = sessionmaker()
-            dsn = re.sub('/autocrudtest$', '', self.dsn)
+            dsn = re.sub('/bionictest$', '', self.dsn)
             tmp_db_engine = create_engine(dsn, isolation_level='AUTOCOMMIT')
             tmp_db_session = Session(bind=tmp_db_engine)
-            tmp_db_session.execute('DROP DATABASE autocrudtest')
+            tmp_db_session.execute('DROP DATABASE bionictest')
 
     def setUp(self):
         super(BaseTestCase, self).setUp()
@@ -44,8 +44,8 @@ class BaseTestCase(unittest.TestCase):
         )
 
         Session = sessionmaker()
-        if 'AUTOCRUD_DSN' in os.environ and os.environ['AUTOCRUD_DSN'] != '':
-            self.dsn = os.environ['AUTOCRUD_DSN']
+        if 'BIONIC_DSN' in os.environ and os.environ['BIONIC_DSN'] != '':
+            self.dsn = os.environ['BIONIC_DSN']
             self.using_sqlite = True if self.dsn.startswith('sqlite:') else False
         else:
             self.db_file = tempfile.NamedTemporaryFile()
@@ -57,10 +57,10 @@ class BaseTestCase(unittest.TestCase):
         if not self.using_sqlite:
             tmp_db_engine = create_engine(self.dsn, isolation_level='AUTOCOMMIT')
             tmp_db_session = Session(bind=tmp_db_engine)
-            tmp_db_session.execute('CREATE DATABASE autocrudtest')
+            tmp_db_session.execute('CREATE DATABASE bionictest')
 
         if self.dsn.startswith('postgresql+pg8000:'):
-            self.dsn += '/autocrudtest'
+            self.dsn += '/bionictest'
 
         self.db_engine  = create_engine(self.dsn, echo=True)
         self.db_session = Session(bind=self.db_engine)

@@ -9,7 +9,7 @@ from .test_base import Base, BaseTestCase
 from .resource import CollectionResource, SingleResource
 
 
-if 'AUTOCRUD_DSN' in os.environ and os.environ['AUTOCRUD_DSN'].startswith('postgresql+pg8000:'):
+if 'BIONIC_DSN' in os.environ and os.environ['BIONIC_DSN'].startswith('postgresql+pg8000:'):
     class Animal(Base):
         __tablename__ = 'animals'
         id          = Column(UUID(), primary_key=True)

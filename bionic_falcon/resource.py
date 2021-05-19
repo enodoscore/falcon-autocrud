@@ -71,7 +71,7 @@ class BaseResource(object):
         self.sessionmaker = sessionmaker_
         self.sessionmaker_kwargs = sessionmaker_kwargs
         if logger is None:
-            logger = logging.getLogger('autocrud')
+            logger = logging.getLogger('bionic')
         self.logger = logger
 
     def param_string_to_list(self, value: str):

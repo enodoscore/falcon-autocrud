@@ -65,7 +65,7 @@ class MappedEmployeeResource(SingleResource):
         'employee_id': 'id',
     }
 
-class AutoCRUDTest(BaseTestCase):
+class BionicTest(BaseTestCase):
     def create_test_resources(self):
         self.app.add_route('/companies', CompanyCollectionResource(self.db_engine))
         self.app.add_route('/companies/{id}', CompanyResource(self.db_engine))

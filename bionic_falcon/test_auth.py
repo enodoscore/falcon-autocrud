@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, Column, DateTime, ForeignKey, Integer, Num
 
 
 from .resource import CollectionResource, SingleResource
-from falcon_autocrud.auth import identify, authorize
+from bionic_falcon.auth import identify, authorize
 
 
 found_user = None
