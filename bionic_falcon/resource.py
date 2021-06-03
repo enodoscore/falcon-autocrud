@@ -334,19 +334,19 @@ class CollectionResource(BaseResource):
 
         with session_scope(self.db_engine, sessionmaker_=self.sessionmaker, **self.sessionmaker_kwargs) as db_session:
             column_filters = kwargs
-
             before_get = getattr(self, 'before_get', None)
             if before_get is not None:
                 self.before_get(req, resp, db_session, column_filters, *args)
+            kwargs = column_filters
 
             extra_select    = getattr(self, 'extra_select', [])
-            resources       = self.apply_arg_filter(req, resp, db_session.query(self.model, *extra_select), column_filters)
+            resources       = self.apply_arg_filter(req, resp, db_session.query(self.model, *extra_select), kwargs)
 
             resources = self.filter_by_params(
                 self.get_filter(
                     req, resp,
                     resources,
-                    *args, **column_filters
+                    *args, **kwargs
                 ),
                 req.params
             )
@@ -390,9 +390,9 @@ class CollectionResource(BaseResource):
                 output = attributes.copy()
                 if callable(resource_meta):
                     if len(extra_select) > 0:
-                        meta_dict = resource_meta(req, resp, *list(itertools.chain(resource, args)), **column_filters)
+                        meta_dict = resource_meta(req, resp, *list(itertools.chain(resource, args)), **kwargs)
                     else:
-                        meta_dict = resource_meta(req, resp, resource, *args, **column_filters)
+                        meta_dict = resource_meta(req, resp, resource, *args, **kwargs)
                     if meta_dict is not None:
                         output['meta'] = meta_dict
                 elif len(resource_meta.keys()) > 0:
@@ -409,7 +409,7 @@ class CollectionResource(BaseResource):
                         resource,
                         self.serialize(
                             resource[0] if len(extra_select) > 0 else resource,
-                            _get_response_fields(self, req, resp, resource, *args, **column_filters),
+                            _get_response_fields(self, req, resp, resource, *args, **kwargs),
                             getattr(self, 'geometry_axes', {})
                         )
                     )
@@ -427,7 +427,7 @@ class CollectionResource(BaseResource):
 
             after_get = getattr(self, 'after_get', None)
             if after_get is not None:
-                after_get(req, resp, resources, *args, **column_filters)
+                after_get(req, resp, resources, *args, **kwargs)
 
     @falcon.before(identify)
     @falcon.before(authorize)
@@ -604,15 +604,15 @@ class SingleResource(BaseResource):
 
         with session_scope(self.db_engine, sessionmaker_=self.sessionmaker, **self.sessionmaker_kwargs) as db_session:
             column_filters = kwargs
-
             before_get = getattr(self, 'before_get', None)
             if before_get is not None:
                 self.before_get(req, resp, db_session, column_filters, *args)
+            kwargs = column_filters
 
             extra_select    = getattr(self, 'extra_select', [])
-            resources = self.apply_arg_filter(req, resp, db_session.query(self.model, *extra_select), column_filters)
+            resources = self.apply_arg_filter(req, resp, db_session.query(self.model, *extra_select), kwargs)
 
-            resources = self.get_filter(req, resp, resources, *args, **column_filters)
+            resources = self.get_filter(req, resp, resources, *args, **kwargs)
 
             try:
                 resource = resources.one()
@@ -626,7 +626,7 @@ class SingleResource(BaseResource):
             result = {
                 'data': self.serialize(
                     resource[0] if len(extra_select) > 0 else resource,
-                    _get_response_fields(self, req, resp, resource, *args, **column_filters),
+                    _get_response_fields(self, req, resp, resource, *args, **kwargs),
                     getattr(self, 'geometry_axes', {})
                 ),
             }
@@ -652,7 +652,7 @@ class SingleResource(BaseResource):
                             'attributes':   self.serialize(
                                 included_resource,
                                 (
-                                    response_fields(self, req, resp, included_resource, *args, **column_filters)
+                                    response_fields(self, req, resp, included_resource, *args, **kwargs)
                                     if callable(response_fields)
                                     else
                                     response_fields
@@ -664,9 +664,9 @@ class SingleResource(BaseResource):
             resource_meta = getattr(self, 'meta', {})
             if callable(resource_meta):
                 if len(extra_select) > 0:
-                    meta_dict = resource_meta(req, resp, *list(itertools.chain(resource, args)), **column_filters)
+                    meta_dict = resource_meta(req, resp, *list(itertools.chain(resource, args)), **kwargs)
                 else:
-                    meta_dict = resource_meta(req, resp, resource, *args, **column_filters)
+                    meta_dict = resource_meta(req, resp, resource, *args, **kwargs)
                 if meta_dict is not None:
                     if 'meta' not in result:
                         result['meta'] = {}
@@ -687,9 +687,9 @@ class SingleResource(BaseResource):
 
             after_get = getattr(self, 'after_get', None)
             if after_get is not None:
-                after_get(req, resp, resource, *args, **column_filters)
+                after_get(req, resp, resource, *args, **kwargs)
 
-    def delete_precondition(self, req, resp, query, *args, **column_filters):
+    def delete_precondition(self, req, resp, query, *args, **kwargs):
         return query
 
     @falcon.before(identify)
