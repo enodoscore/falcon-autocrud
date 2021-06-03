@@ -334,10 +334,15 @@ class CollectionResource(BaseResource):
 
         with session_scope(self.db_engine, sessionmaker_=self.sessionmaker, **self.sessionmaker_kwargs) as db_session:
             column_filters = kwargs
+            print('on_get')
             before_get = getattr(self, 'before_get', None)
+            print('does before get exist?')
+            print(before_get)
             if before_get is not None:
+                print('before get is not none')
                 self.before_get(req, resp, db_session, column_filters, *args)
             kwargs = column_filters
+            print(kwargs)
 
             extra_select    = getattr(self, 'extra_select', [])
             resources       = self.apply_arg_filter(req, resp, db_session.query(self.model, *extra_select), kwargs)
