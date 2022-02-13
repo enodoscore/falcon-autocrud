@@ -141,7 +141,7 @@ class BaseResource(object):
                 return [_serialize_value('', val) for val in value]
             if isinstance(value, uuid.UUID):
                 return value.hex
-            if isinstance(value, datetime):
+            elif isinstance(value, datetime):
                 if name in getattr(self, 'naive_datetimes', []): # List of naive datetime columns:
                     return value.strftime('%Y-%m-%dT%H:%M:%S')
                 elif name in getattr(self, 'datetime_in_ms', []): # List of datetime columns to keep as ms since Unix epoch:
@@ -314,6 +314,26 @@ class BaseResource(object):
         for key, setter in defaults.items():
             if key not in attributes:
                 attributes[key] = setter(req, resp, attributes)
+    
+    def safe_commit(self, db_session):
+        try:
+            db_session.commit()
+        except sqlalchemy.exc.IntegrityError as err:
+            # Cases such as unallowed NULL value should have been checked
+            # before we got here (e.g. validate against schema
+            # using the middleware) - therefore assume this is a UNIQUE
+            # constraint violation
+            db_session.rollback()
+            raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
+        except sqlalchemy.exc.ProgrammingError as err:
+            db_session.rollback()
+            if self._is_unique_violation(err):
+                raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
+            else:
+                raise
+        except:
+            db_session.rollback()
+            raise
 
 class CollectionResource(BaseResource):
     """
@@ -466,24 +486,7 @@ class CollectionResource(BaseResource):
                         subresource = resource_class(**value)
                         setattr(resource, key, subresource)
 
-            try:
-                db_session.commit()
-            except sqlalchemy.exc.IntegrityError as err:
-                # Cases such as unallowed NULL value should have been checked
-                # before we got here (e.g. validate against schema
-                # using the middleware) - therefore assume this is a UNIQUE
-                # constraint violation
-                db_session.rollback()
-                raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
-            except sqlalchemy.exc.ProgrammingError as err:
-                db_session.rollback()
-                if self._is_unique_violation(err):
-                    raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
-                else:
-                    raise
-            except:
-                db_session.rollback()
-                raise
+            self.safe_commit(db_session)
 
             resp.status = falcon.HTTP_CREATED
             response_fields = _get_response_fields(self, req, resp, resources[0], *args, **kwargs)
@@ -559,24 +562,7 @@ class CollectionResource(BaseResource):
                     resource = model(**args)
                     db_session.add(resource)
 
-            try:
-                db_session.commit()
-            except sqlalchemy.exc.IntegrityError as err:
-                # Cases such as unallowed NULL value should have been checked
-                # before we got here (e.g. validate against schema
-                # using the middleware) - therefore assume this is a UNIQUE
-                # constraint violation
-                db_session.rollback()
-                raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
-            except sqlalchemy.exc.ProgrammingError as err:
-                db_session.rollback()
-                if self._is_unique_violation(err):
-                    raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
-                else:
-                    raise
-            except:
-                db_session.rollback()
-                raise
+            self.safe_commit(db_session)
 
         resp.status = falcon.HTTP_OK
         req.context['result'] = {}
@@ -801,24 +787,7 @@ class SingleResource(BaseResource):
                 setattr(resource, key, value)
 
             db_session.add(resource)
-            try:
-                db_session.commit()
-            except sqlalchemy.exc.IntegrityError as err:
-                # Cases such as unallowed NULL value should have been checked
-                # before we got here (e.g. validate against schema
-                # using the middleware) - therefore assume this is a UNIQUE
-                # constraint violation
-                db_session.rollback()
-                raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
-            except sqlalchemy.exc.ProgrammingError as err:
-                db_session.rollback()
-                if self._is_unique_violation(err):
-                    raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
-                else:
-                    raise
-            except:
-                db_session.rollback()
-                raise
+            self.safe_commit(db_session)
 
             resp.status = falcon.HTTP_CREATED if is_new else falcon.HTTP_OK
             req.context['result'] = {
