@@ -11,7 +11,7 @@ async def async_authorize(req, resp, resource, params):
 
 class AsyncCollectionResource(CollectionResource):
     """
-    Provides CRUD facilities for a resource collection.
+    Provides Async CRUD facilities for a resource collection.
     """
 
     @falcon.before(async_identify)
@@ -35,13 +35,6 @@ class AsyncCollectionResource(CollectionResource):
     async def on_patch(self, req, resp, *args, **kwargs):
         """
         Update a collection.
-        For now, it only supports adding entities to the collection, like this:
-        {
-            'patches': [
-                {'op': 'add', 'path': '/', 'value': {'name': 'Jim', 'age', 25}},
-                {'op': 'add', 'path': '/', 'value': {'name': 'Bob', 'age', 28}}
-            ]
-        }
         """
         super(AsyncCollectionResource, self).on_patch(req, resp, *args, **kwargs)
         
