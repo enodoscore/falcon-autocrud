@@ -458,10 +458,16 @@ class CollectionResource(BaseResource):
         if 'POST' not in getattr(self, 'methods', ['GET', 'POST', 'PATCH']):
             raise falcon.errors.HTTPMethodNotAllowed(getattr(self, 'methods', ['GET', 'POST', 'PATCH']))
 
-        attributes, linked_attributes = self.deserialize(self.model, kwargs, req.context['doc'] if 'doc' in req.context else None, getattr(self, 'allow_subresources', False))
+        body_data = req.context['doc'] if 'doc' in req.context else None
+        attributes, linked_attributes = self.deserialize(self.model, kwargs, body_data, getattr(self, 'allow_subresources', False))
 
         with session_scope(self.db_engine, sessionmaker_=self.sessionmaker, **self.sessionmaker_kwargs) as db_session:
-            single_entity = len(attributes) == 1
+            allowed_types = getattr(self, 'post_types', ['object', 'array'])
+            is_array = type(body_data) is list
+            if not 'array' in allowed_types and is_array:
+                raise falcon.errors.HTTPBadRequest('Posting arrays is not supported on this resource.')
+            if not ('object' in allowed_types or is_array):
+                raise falcon.errors.HTTPBadRequest('Posting objects is not supported on this resource.')
 
             for attribute_dict in attributes:
                 self.apply_default_attributes('post_defaults', req, resp, attribute_dict)
@@ -470,7 +476,7 @@ class CollectionResource(BaseResource):
 
             before_post = getattr(self, 'before_post', None)
             if before_post is not None:
-                self.before_post(req, resp, db_session, resources[0] if single_entity else resources, *args, **kwargs)
+                self.before_post(req, resp, db_session, resources[0] if not is_array else resources, *args, **kwargs)
 
             for resource in resources:
                 db_session.add(resource)
@@ -493,13 +499,11 @@ class CollectionResource(BaseResource):
             geometry_axes = getattr(self, 'geometry_axes', {})
             processed_data = [ self.serialize(resource, response_fields, geometry_axes) for resource in resources ]
 
-            req.context['result'] = {
-                'data': processed_data[0] if single_entity else processed_data
-            }
+            req.context['result'] = { 'data': processed_data[0] if not is_array else processed_data }
 
             after_post = getattr(self, 'after_post', None)
             if after_post is not None:
-                after_post(req, resp, resources[0] if single_entity else resources)
+                after_post(req, resp, resources[0] if not is_array else resources)
 
     @falcon.before(identify)
     @falcon.before(authorize)
