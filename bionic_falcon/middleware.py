@@ -91,7 +91,8 @@ class Middleware(object):
                     )
 
     def process_response(self, req, resp, resource, req_succeeded):
-        if 'result' not in req.context:
+        if 'result' not in req.context or len(resp.data) > 0:
+            # If there's no response to process or a different middleware set the response to something, do nothing in this one.
             return
 
         result = req.context['result']
