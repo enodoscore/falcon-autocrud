@@ -66,13 +66,37 @@ class BaseResource(object):
             (args[1] == 'ERROR' and args[2] == '23505') # Postgres 9.6
         )
 
-    def __init__(self, db_engine, logger=None, sessionmaker_=sessionmaker, sessionmaker_kwargs={}):
+    def __init__(self, db_engine, logger=None, sessionmaker_=sessionmaker, sessionmaker_kwargs={}, param_filters=[], serialize_filters=[]):
         self.db_engine = db_engine
         self.sessionmaker = sessionmaker_
         self.sessionmaker_kwargs = sessionmaker_kwargs
         if logger is None:
             logger = logging.getLogger('bionic')
         self.logger = logger
+
+        self.param_filters = {
+            '=': lambda attr, value: attr == value,
+            'null': lambda attr, value: attr.is_(None) if value != '0' else attr.isnot(None),
+            'startswith': lambda attr, value: attr.like('{0}%'.format(value)),
+            'istartswith': lambda attr, value: attr.ilike('{0}%'.format(value)),
+            'endswith': lambda attr, value: attr.like('%{0}'.format(value)),
+            'iendswith': lambda attr, value: attr.ilike('%{0}'.format(value)),
+            'contains': lambda attr, value: attr.like('%{0}%'.format(value)),
+            'icontains': lambda attr, value: attr.ilike('%{0}%'.format(value)),
+            'lt': lambda attr, value: attr < value,
+            'lte': lambda attr, value: attr <= value,
+            'gt': lambda attr, value: attr > value,
+            'gte': lambda attr, value: attr >= value,
+            'in': lambda attr, value: attr.in_(self.param_string_to_list(value))
+        }
+        for comparator, fxn in param_filters:
+            self.param_filters[comparator] = fxn
+
+        self.serialize_filters = {
+            uuid.UUID: lambda value: value.hex
+        }
+        for comparator, fxn in serialize_filters:
+            self.serialize_filters[comparator] = fxn
 
     def param_string_to_list(self, value: str):
         if not value.startswith('[') or not value.endswith(']'):
@@ -100,37 +124,12 @@ class BaseResource(object):
             if attr is None or not isinstance(inspect(self.model).attrs[key], ColumnProperty):
                 self.logger.warn('An attribute ({0}) provided for filtering is invalid'.format(key))
                 raise falcon.errors.HTTPBadRequest('Invalid attribute', 'An attribute provided for filtering is invalid')
-            if comparison == '=':
-                resources = resources.filter(attr == value)
-            elif comparison == 'null':
-                if value != '0':
-                    resources = resources.filter(attr.is_(None))
-                else:
-                    resources = resources.filter(attr.isnot(None))
-            elif comparison == 'startswith':
-                resources = resources.filter(attr.like('{0}%'.format(value)))
-            elif comparison == 'istartswith':
-                resources = resources.filter(attr.ilike('{0}%'.format(value)))
-            elif comparison == 'endswith':
-                resources = resources.filter(attr.like('%{0}'.format(value)))
-            elif comparison == 'iendswith':
-                resources = resources.filter(attr.ilike('%{0}'.format(value)))
-            elif comparison == 'contains':
-                resources = resources.filter(attr.like('%{0}%'.format(value)))
-            elif comparison == 'icontains':
-                resources = resources.filter(attr.ilike('%{0}%'.format(value)))
-            elif comparison == 'lt':
-                resources = resources.filter(attr < value)
-            elif comparison == 'lte':
-                resources = resources.filter(attr <= value)
-            elif comparison == 'gt':
-                resources = resources.filter(attr > value)
-            elif comparison == 'gte':
-                resources = resources.filter(attr >= value)
-            elif comparison == 'in':
-                resources = resources.filter(attr.in_(self.param_string_to_list(value)))
-            else:
+
+            filter_fxn = self.param_filters.get(comparison, None)
+            if filter_fxn is None:
                 raise falcon.errors.HTTPBadRequest('Invalid attribute', 'An attribute provided for filtering is invalid')
+            resources = resources.filter(filter_fxn(attr, value))
+
         return resources
 
     def serialize(self, resource, response_fields=None, geometry_axes=None):
