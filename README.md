@@ -305,6 +305,64 @@ This versioning only helps you on an UPDATE, not a DELETE, so if you want a
 delete_precondition to be protected, you will need to use mark_deleted to
 update the row (see "not really deleting", next), instead of doing a true delete.
 
+### Custom parameter filters
+
+This package supports adding your own custom filter parameters, so that simple,
+repeated filtering logic can be done by the agent querying the url rather than
+baking it into your server itself. The server provides some default query
+parameter filters, all of which can be seen in the example curls at the top of
+this readme.
+
+To add your own parameter filters, simply define a dictionary on your resource
+whose keys are the comparator string and values are the corresponding filter
+function. The filter function should take two arguments, attr, which is the
+actual value of the column attribute returned by SQL, and value, which is
+the value of the query parameter.
+
+For example, if you wanted a query parameter to filter out all
+nonzero values for an integer or numeric column:
+
+```
+class BudgetCollectionResource(CollectionResource):
+    model = Budget
+
+    param_filters={
+        'nonzero': lambda attr, value: attr > 0 or attr < 0
+    }
+```
+
+### Custom serialization
+
+Some users may need to uniformly change how their resource classes return
+certain SQL data types. To do this, users can implement custom serialization
+functions. The package provides certain inbuilt functions to automatically
+serialize things like uuids and datetimes, but these can be overridden or
+additional functions can be implemented for other less common SQL data types.
+
+To add new serialization functions, you will need to define a serialize_filters
+variable on your resource class. The variable is structured as a 2d array,
+consisting of a list of length-2 tuples. The first element in the tuple is
+the function that determines whether or not this serialization tuple should be
+used by the instance returned by SQLAlchemy. If this condition function returns
+True, then the instance is provided to the second function in the tuple, which
+takes the instance and returns its serialized value.
+
+Say a user wanted to transform all datetimes into their local, New York
+timezone (ignoring daylight savings in this example for simplicity's sake),
+this would be accomplished by the following:
+
+```
+class CalendarResource(SingleResource):
+    model = Calendar
+
+    serialize_filters = [
+        [
+            lambda value, **kwargs: isinstance(value, datetime),
+            lambda value, name, **kwargs: value.astimezone(tz=timezone(-timedelta(hours=4))).strftime('%Y-%m-%dT%H:%M:%SZ')
+        ]
+    ]
+```
+
 ### Not really deleting
 
 If you want to just mark a resource as deleted in the database, but not really
