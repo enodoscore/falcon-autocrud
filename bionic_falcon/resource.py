@@ -74,6 +74,86 @@ class BaseResource(object):
             logger = logging.getLogger('bionic')
         self.logger = logger
 
+        default_param_filters = {
+            '=': lambda attr, value: attr == value,
+            'null': lambda attr, value: attr.is_(None) if value != '0' else attr.isnot(None),
+            'startswith': lambda attr, value: attr.like('{0}%'.format(value)),
+            'istartswith': lambda attr, value: attr.ilike('{0}%'.format(value)),
+            'endswith': lambda attr, value: attr.like('%{0}'.format(value)),
+            'iendswith': lambda attr, value: attr.ilike('%{0}'.format(value)),
+            'contains': lambda attr, value: attr.like('%{0}%'.format(value)),
+            'icontains': lambda attr, value: attr.ilike('%{0}%'.format(value)),
+            'lt': lambda attr, value: attr < value,
+            'lte': lambda attr, value: attr <= value,
+            'gt': lambda attr, value: attr > value,
+            'gte': lambda attr, value: attr >= value,
+            'in': lambda attr, value: attr.in_(self.param_string_to_list(value))
+        }
+        param_filters = { **default_param_filters }
+        for comparator, fxn in getattr(self, 'param_filters', {}).items():
+            param_filters[comparator] = fxn
+        self.param_filters = param_filters
+
+        def format_datetime(value, name):
+            if name in getattr(self, 'naive_datetimes', []): # List of naive datetime columns:
+                return value.strftime('%Y-%m-%dT%H:%M:%S')
+            elif name in getattr(self, 'datetime_in_ms', []): # List of datetime columns to keep as ms since Unix epoch:
+                try:
+                    return int(mktime(value.timetuple()))
+                except:
+                    return None
+            else:
+                return value.strftime('%Y-%m-%dT%H:%M:%SZ')
+        
+        def format_geometry(value, name, attrs, geometry_axes):
+            value = geoalchemy2.shape.to_shape(value)
+            if isinstance(value, Point):
+                axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
+                return dict(itertools.zip_longest(axes, value.coords[0]))
+            elif isinstance(value, LineString):
+                axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
+                return [
+                    dict(itertools.zip_longest(axes, point))
+                    for point in list(value.coords)
+                ]
+            elif isinstance(value, Polygon):
+                axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
+                return [
+                    dict(itertools.zip_longest(axes, point))
+                    for point in list(value.boundary.coords)
+                ]
+            else:
+                raise UnsupportedGeometryType('Unsupported geometry type {0}'.format(value.geometryType()))
+
+        default_serialize_filters = [
+            [
+                lambda value, **kwargs: isinstance(value, list),
+                lambda value, name, attrs, geometry_axes: [self._serialize_value(name, val, attrs, geometry_axes) for val in value]
+            ], [
+                lambda value, **kwargs: isinstance(value, datetime),
+                lambda value, name, **kwargs: format_datetime(value=value, name=name)
+            ], [
+                lambda value, **kwargs: isinstance(value, uuid.UUID),
+                lambda value, **kwargs: value.hex
+            ], [
+                lambda value, **kwargs: isinstance(value, date),
+                lambda value, **kwargs: value.strftime('%Y-%m-%d')
+            ], [
+                lambda value, **kwargs: isinstance(value, time),
+                lambda value, **kwargs: value.isoformat()
+            ], [
+                lambda value, **kwargs: isinstance(value, Decimal),
+                lambda value, **kwargs: float(value)
+            ], [
+                lambda value, **kwargs: support_geo and isinstance(value, WKBElement),
+                lambda value, name, attrs, geometry_axes: format_geometry(value, name, attrs, geometry_axes)
+            ],
+        ]
+        serialize_filters = []
+        for filter_tuple in getattr(self, 'serialize_filters', []):
+            serialize_filters.append(filter_tuple)
+        self.serialize_filters = [ *serialize_filters, *default_serialize_filters ]
+
     def param_string_to_list(self, value: str):
         if not value.startswith('[') or not value.endswith(']'):
             raise falcon.errors.HTTPBadRequest('Invalid attribute', f'Query __in filter value \'{value}\' is an invalid list string. Lists should be formatted as [a,b,c].')
@@ -100,88 +180,26 @@ class BaseResource(object):
             if attr is None or not isinstance(inspect(self.model).attrs[key], ColumnProperty):
                 self.logger.warn('An attribute ({0}) provided for filtering is invalid'.format(key))
                 raise falcon.errors.HTTPBadRequest('Invalid attribute', 'An attribute provided for filtering is invalid')
-            if comparison == '=':
-                resources = resources.filter(attr == value)
-            elif comparison == 'null':
-                if value != '0':
-                    resources = resources.filter(attr.is_(None))
-                else:
-                    resources = resources.filter(attr.isnot(None))
-            elif comparison == 'startswith':
-                resources = resources.filter(attr.like('{0}%'.format(value)))
-            elif comparison == 'istartswith':
-                resources = resources.filter(attr.ilike('{0}%'.format(value)))
-            elif comparison == 'endswith':
-                resources = resources.filter(attr.like('%{0}'.format(value)))
-            elif comparison == 'iendswith':
-                resources = resources.filter(attr.ilike('%{0}'.format(value)))
-            elif comparison == 'contains':
-                resources = resources.filter(attr.like('%{0}%'.format(value)))
-            elif comparison == 'icontains':
-                resources = resources.filter(attr.ilike('%{0}%'.format(value)))
-            elif comparison == 'lt':
-                resources = resources.filter(attr < value)
-            elif comparison == 'lte':
-                resources = resources.filter(attr <= value)
-            elif comparison == 'gt':
-                resources = resources.filter(attr > value)
-            elif comparison == 'gte':
-                resources = resources.filter(attr >= value)
-            elif comparison == 'in':
-                resources = resources.filter(attr.in_(self.param_string_to_list(value)))
-            else:
+
+            filter_fxn = self.param_filters.get(comparison, None)
+            if filter_fxn is None:
                 raise falcon.errors.HTTPBadRequest('Invalid attribute', 'An attribute provided for filtering is invalid')
+            resources = resources.filter(filter_fxn(attr, value))
+
         return resources
+
+    def _serialize_value(self, name, value, attrs, geometry_axes):
+        for condition_fxn, value_fxn in self.serialize_filters:
+            if condition_fxn(value=value, name=name):
+                return value_fxn(value=value, name=name, attrs=attrs, geometry_axes=geometry_axes)
+        return value
 
     def serialize(self, resource, response_fields=None, geometry_axes=None):
         attrs           = inspect(resource.__class__).attrs
-
-        def _serialize_value(name, value):
-            if isinstance(value, list):
-                return [_serialize_value('', val) for val in value]
-            if isinstance(value, uuid.UUID):
-                return value.hex
-            elif isinstance(value, datetime):
-                if name in getattr(self, 'naive_datetimes', []): # List of naive datetime columns:
-                    return value.strftime('%Y-%m-%dT%H:%M:%S')
-                elif name in getattr(self, 'datetime_in_ms', []): # List of datetime columns to keep as ms since Unix epoch:
-                    try:
-                        return int(mktime(value.timetuple()))
-                    except:
-                        return None
-                else:
-                    return value.strftime('%Y-%m-%dT%H:%M:%SZ')
-            elif isinstance(value, date):
-                return value.strftime('%Y-%m-%d')
-            elif isinstance(value, time):
-                return value.isoformat()
-            elif isinstance(value, Decimal):
-                return float(value)
-            elif support_geo and isinstance(value, WKBElement):
-                value = geoalchemy2.shape.to_shape(value)
-                if isinstance(value, Point):
-                    axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
-                    return dict(itertools.zip_longest(axes, value.coords[0]))
-                elif isinstance(value, LineString):
-                    axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
-                    return [
-                        dict(itertools.zip_longest(axes, point))
-                        for point in list(value.coords)
-                    ]
-                elif isinstance(value, Polygon):
-                    axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
-                    return [
-                        dict(itertools.zip_longest(axes, point))
-                        for point in list(value.boundary.coords)
-                    ]
-                else:
-                    raise UnsupportedGeometryType('Unsupported geometry type {0}'.format(value.geometryType()))
-            else:
-                return value
         if response_fields is None:
             response_fields = attrs.keys()
         return {
-            attr: _serialize_value(attr, getattr(resource, attr)) for attr in response_fields if isinstance(attrs[attr], ColumnProperty)
+            attr: self._serialize_value(attr, getattr(resource, attr), attrs, geometry_axes) for attr in response_fields if isinstance(attrs[attr], ColumnProperty)
         }
 
     def _inbound_attribute(self, name):
