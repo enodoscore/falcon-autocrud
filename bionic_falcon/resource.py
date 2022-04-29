@@ -92,11 +92,48 @@ class BaseResource(object):
         for comparator, fxn in param_filters:
             self.param_filters[comparator] = fxn
 
-        self.serialize_filters = {
-            uuid.UUID: lambda value: value.hex
-        }
-        for comparator, fxn in serialize_filters:
-            self.serialize_filters[comparator] = fxn
+        def format_datetime(name, value):
+            if name in getattr(self, 'naive_datetimes', []): # List of naive datetime columns:
+                return value.strftime('%Y-%m-%dT%H:%M:%S')
+            elif name in getattr(self, 'datetime_in_ms', []): # List of datetime columns to keep as ms since Unix epoch:
+                try:
+                    return int(mktime(value.timetuple()))
+                except:
+                    return None
+            else:
+                return value.strftime('%Y-%m-%dT%H:%M:%SZ')
+        
+        def format_geometry(name, value, attrs, geometry_axes):
+            value = geoalchemy2.shape.to_shape(value)
+            if isinstance(value, Point):
+                axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
+                return dict(itertools.zip_longest(axes, value.coords[0]))
+            elif isinstance(value, LineString):
+                axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
+                return [
+                    dict(itertools.zip_longest(axes, point))
+                    for point in list(value.coords)
+                ]
+            elif isinstance(value, Polygon):
+                axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
+                return [
+                    dict(itertools.zip_longest(axes, point))
+                    for point in list(value.boundary.coords)
+                ]
+            else:
+                raise UnsupportedGeometryType('Unsupported geometry type {0}'.format(value.geometryType()))
+
+        self.serialize_filters = [
+            [ lambda value: isinstance(value, list), lambda value: [self._serialize_value('', val) for val in value] ],
+            [ lambda value: isinstance(value, datetime), lambda name, value: format_datetime(name=name, value=value) ],
+            [ lambda value: isinstance(value, uuid.UUID), lambda value: value.hex ],
+            [ lambda value: isinstance(value, date), lambda value: value.strftime('%Y-%m-%d') ],
+            [ lambda value: isinstance(value, time), lambda value: value.isoformat() ],
+            [ lambda value: isinstance(value, Decimal), lambda value: float(value) ],
+            [ lambda value: support_geo and isinstance(value, WKBElement), lambda name, value, attrs, geometry_axes: format_geometry(name, value, attrs, geometry_axes) ],
+        ]
+        for filter_tuple in serialize_filters:
+            self.serialize_filters.insert(0, filter_tuple) # Insert is important here because lower idx == higher priority and user defined functions should take precendence over defaults
 
     def param_string_to_list(self, value: str):
         if not value.startswith('[') or not value.endswith(']'):
@@ -132,55 +169,53 @@ class BaseResource(object):
 
         return resources
 
+    def _serialize_value(self, name, value, attrs, geometry_axes):
+        if isinstance(value, list):
+            return [self._serialize_value('', val) for val in value]
+        if isinstance(value, uuid.UUID):
+            return value.hex
+        if isinstance(value, datetime):
+            if name in getattr(self, 'naive_datetimes', []): # List of naive datetime columns:
+                return value.strftime('%Y-%m-%dT%H:%M:%S')
+            elif name in getattr(self, 'datetime_in_ms', []): # List of datetime columns to keep as ms since Unix epoch:
+                try:
+                    return int(mktime(value.timetuple()))
+                except:
+                    return None
+            else:
+                return value.strftime('%Y-%m-%dT%H:%M:%SZ')
+        elif isinstance(value, date):
+            return value.strftime('%Y-%m-%d')
+        elif isinstance(value, time):
+            return value.isoformat()
+        elif isinstance(value, Decimal):
+            return float(value)
+        elif support_geo and isinstance(value, WKBElement):
+            value = geoalchemy2.shape.to_shape(value)
+            if isinstance(value, Point):
+                axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
+                return dict(itertools.zip_longest(axes, value.coords[0]))
+            elif isinstance(value, LineString):
+                axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
+                return [
+                    dict(itertools.zip_longest(axes, point))
+                    for point in list(value.coords)
+                ]
+            elif isinstance(value, Polygon):
+                axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
+                return [
+                    dict(itertools.zip_longest(axes, point))
+                    for point in list(value.boundary.coords)
+                ]
+            else:
+                raise UnsupportedGeometryType('Unsupported geometry type {0}'.format(value.geometryType()))
+
     def serialize(self, resource, response_fields=None, geometry_axes=None):
         attrs           = inspect(resource.__class__).attrs
-
-        def _serialize_value(name, value):
-            if isinstance(value, list):
-                return [_serialize_value('', val) for val in value]
-            if isinstance(value, uuid.UUID):
-                return value.hex
-            if isinstance(value, datetime):
-                if name in getattr(self, 'naive_datetimes', []): # List of naive datetime columns:
-                    return value.strftime('%Y-%m-%dT%H:%M:%S')
-                elif name in getattr(self, 'datetime_in_ms', []): # List of datetime columns to keep as ms since Unix epoch:
-                    try:
-                        return int(mktime(value.timetuple()))
-                    except:
-                        return None
-                else:
-                    return value.strftime('%Y-%m-%dT%H:%M:%SZ')
-            elif isinstance(value, date):
-                return value.strftime('%Y-%m-%d')
-            elif isinstance(value, time):
-                return value.isoformat()
-            elif isinstance(value, Decimal):
-                return float(value)
-            elif support_geo and isinstance(value, WKBElement):
-                value = geoalchemy2.shape.to_shape(value)
-                if isinstance(value, Point):
-                    axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
-                    return dict(itertools.zip_longest(axes, value.coords[0]))
-                elif isinstance(value, LineString):
-                    axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
-                    return [
-                        dict(itertools.zip_longest(axes, point))
-                        for point in list(value.coords)
-                    ]
-                elif isinstance(value, Polygon):
-                    axes = (geometry_axes or {}).get(name, ['x', 'y', 'z'])[0:attrs[name].columns[0].type.dimension]
-                    return [
-                        dict(itertools.zip_longest(axes, point))
-                        for point in list(value.boundary.coords)
-                    ]
-                else:
-                    raise UnsupportedGeometryType('Unsupported geometry type {0}'.format(value.geometryType()))
-            else:
-                return value
         if response_fields is None:
             response_fields = attrs.keys()
         return {
-            attr: _serialize_value(attr, getattr(resource, attr)) for attr in response_fields if isinstance(attrs[attr], ColumnProperty)
+            attr: self._serialize_value(attr, getattr(resource, attr), attrs, geometry_axes) for attr in response_fields if isinstance(attrs[attr], ColumnProperty)
         }
 
     def _inbound_attribute(self, name):
