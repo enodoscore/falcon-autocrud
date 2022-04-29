@@ -66,7 +66,7 @@ class BaseResource(object):
             (args[1] == 'ERROR' and args[2] == '23505') # Postgres 9.6
         )
 
-    def __init__(self, db_engine, logger=None, sessionmaker_=sessionmaker, sessionmaker_kwargs={}, serialize_filters=[]):
+    def __init__(self, db_engine, logger=None, sessionmaker_=sessionmaker, sessionmaker_kwargs={}):
         self.db_engine = db_engine
         self.sessionmaker = sessionmaker_
         self.sessionmaker_kwargs = sessionmaker_kwargs
