@@ -326,10 +326,14 @@ nonzero values for an integer or numeric column:
 class BudgetCollectionResource(CollectionResource):
     model = Budget
 
-    param_filters={
+    param_filters = {
         'nonzero': lambda attr, value: attr > 0 or attr < 0
     }
 ```
+
+One could then query an endpoint using the nonzero query parameter like so:
+
+```http GET http://localhost/budgets?cost__nonzero```
 
 ### Custom serialization
 
