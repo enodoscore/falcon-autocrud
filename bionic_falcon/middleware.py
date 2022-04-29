@@ -90,15 +90,20 @@ class Middleware(object):
                         json.dumps({'error': str(error)})
                     )
 
+    async def process_resource_async(self, req, resp, resource, params):
+        self.process_resource(req, resp, resource, params)
+
     def process_response(self, req, resp, resource, req_succeeded):
-        if 'result' not in req.context:
+        if 'result' not in req.context or (resp.data and len(resp.data) > 0):
+            # If there's no response to process or a different middleware set the response to something, do nothing in this one.
             return
 
         result = req.context['result']
-        if 'data' in result and not 'meta' in result:
-            resp.body = json.dumps(result['data'])
-        else:
-            resp.body = json.dumps(result)
+        use_text = hasattr(resp, 'text') # Falcon 3 deprecates the use of response.body, .text should be used instead
+        resp_content_key = 'text' if use_text else 'body'
+        has_metadata = 'data' in result and not 'meta' in result
+        resp_data = json.dumps(result['data'] if has_metadata else result)
+        setattr(resp, resp_content_key, resp_data)
 
         schema = _get_response_schema(resource, req)
         if schema is None:
@@ -110,3 +115,6 @@ class Middleware(object):
             method_name = {'POST': 'on_post', 'PUT': 'on_put', 'PATCH': 'on_patch', 'GET': 'on_get', 'DELETE': 'on_delete'}[req.method]
             self.logger.error('Blocking proposed response from being sent from {0}.{1}.{2} to client as it does not match the defined schema: {3}'.format(resource.__module__, resource.__class__.__name__, method_name, str(error)))
             raise falcon.HTTPInternalServerError('Internal Server Error', 'Undisclosed')
+
+    async def process_response_async(self, req, resp, resource, req_succeeded):
+        self.process_response(req, resp, resource, req_succeeded)

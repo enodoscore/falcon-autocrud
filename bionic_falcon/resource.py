@@ -348,6 +348,26 @@ class BaseResource(object):
         for key, setter in defaults.items():
             if key not in attributes:
                 attributes[key] = setter(req, resp, attributes)
+    
+    def safe_commit(self, db_session):
+        try:
+            db_session.commit()
+        except sqlalchemy.exc.IntegrityError as err:
+            # Cases such as unallowed NULL value should have been checked
+            # before we got here (e.g. validate against schema
+            # using the middleware) - therefore assume this is a UNIQUE
+            # constraint violation
+            db_session.rollback()
+            raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
+        except sqlalchemy.exc.ProgrammingError as err:
+            db_session.rollback()
+            if self._is_unique_violation(err):
+                raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
+            else:
+                raise
+        except:
+            db_session.rollback()
+            raise
 
 class CollectionResource(BaseResource):
     """
@@ -472,10 +492,16 @@ class CollectionResource(BaseResource):
         if 'POST' not in getattr(self, 'methods', ['GET', 'POST', 'PATCH']):
             raise falcon.errors.HTTPMethodNotAllowed(getattr(self, 'methods', ['GET', 'POST', 'PATCH']))
 
-        attributes, linked_attributes = self.deserialize(self.model, kwargs, req.context['doc'] if 'doc' in req.context else None, getattr(self, 'allow_subresources', False))
+        body_data = req.context['doc'] if 'doc' in req.context else None
+        attributes, linked_attributes = self.deserialize(self.model, kwargs, body_data, getattr(self, 'allow_subresources', False))
 
         with session_scope(self.db_engine, sessionmaker_=self.sessionmaker, **self.sessionmaker_kwargs) as db_session:
-            single_entity = len(attributes) == 1
+            allowed_types = getattr(self, 'post_types', ['object', 'array'])
+            is_array = type(body_data) is list
+            if not 'array' in allowed_types and is_array:
+                raise falcon.errors.HTTPBadRequest('Posting arrays is not supported on this resource.')
+            if not ('object' in allowed_types or is_array):
+                raise falcon.errors.HTTPBadRequest('Posting objects is not supported on this resource.')
 
             for attribute_dict in attributes:
                 self.apply_default_attributes('post_defaults', req, resp, attribute_dict)
@@ -484,7 +510,7 @@ class CollectionResource(BaseResource):
 
             before_post = getattr(self, 'before_post', None)
             if before_post is not None:
-                self.before_post(req, resp, db_session, resources[0] if single_entity else resources, *args, **kwargs)
+                self.before_post(req, resp, db_session, resources[0] if not is_array else resources, *args, **kwargs)
 
             for resource in resources:
                 db_session.add(resource)
@@ -500,37 +526,18 @@ class CollectionResource(BaseResource):
                         subresource = resource_class(**value)
                         setattr(resource, key, subresource)
 
-            try:
-                db_session.commit()
-            except sqlalchemy.exc.IntegrityError as err:
-                # Cases such as unallowed NULL value should have been checked
-                # before we got here (e.g. validate against schema
-                # using the middleware) - therefore assume this is a UNIQUE
-                # constraint violation
-                db_session.rollback()
-                raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
-            except sqlalchemy.exc.ProgrammingError as err:
-                db_session.rollback()
-                if self._is_unique_violation(err):
-                    raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
-                else:
-                    raise
-            except:
-                db_session.rollback()
-                raise
+            self.safe_commit(db_session)
 
             resp.status = falcon.HTTP_CREATED
             response_fields = _get_response_fields(self, req, resp, resources[0], *args, **kwargs)
             geometry_axes = getattr(self, 'geometry_axes', {})
             processed_data = [ self.serialize(resource, response_fields, geometry_axes) for resource in resources ]
 
-            req.context['result'] = {
-                'data': processed_data[0] if single_entity else processed_data
-            }
+            req.context['result'] = { 'data': processed_data[0] if not is_array else processed_data }
 
             after_post = getattr(self, 'after_post', None)
             if after_post is not None:
-                after_post(req, resp, resources[0] if single_entity else resources)
+                after_post(req, resp, resources[0] if not is_array else resources)
 
     @falcon.before(identify)
     @falcon.before(authorize)
@@ -593,24 +600,7 @@ class CollectionResource(BaseResource):
                     resource = model(**args)
                     db_session.add(resource)
 
-            try:
-                db_session.commit()
-            except sqlalchemy.exc.IntegrityError as err:
-                # Cases such as unallowed NULL value should have been checked
-                # before we got here (e.g. validate against schema
-                # using the middleware) - therefore assume this is a UNIQUE
-                # constraint violation
-                db_session.rollback()
-                raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
-            except sqlalchemy.exc.ProgrammingError as err:
-                db_session.rollback()
-                if self._is_unique_violation(err):
-                    raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
-                else:
-                    raise
-            except:
-                db_session.rollback()
-                raise
+            self.safe_commit(db_session)
 
         resp.status = falcon.HTTP_OK
         req.context['result'] = {}
@@ -835,24 +825,7 @@ class SingleResource(BaseResource):
                 setattr(resource, key, value)
 
             db_session.add(resource)
-            try:
-                db_session.commit()
-            except sqlalchemy.exc.IntegrityError as err:
-                # Cases such as unallowed NULL value should have been checked
-                # before we got here (e.g. validate against schema
-                # using the middleware) - therefore assume this is a UNIQUE
-                # constraint violation
-                db_session.rollback()
-                raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
-            except sqlalchemy.exc.ProgrammingError as err:
-                db_session.rollback()
-                if self._is_unique_violation(err):
-                    raise falcon.errors.HTTPConflict('Conflict', 'Unique constraint violated')
-                else:
-                    raise
-            except:
-                db_session.rollback()
-                raise
+            self.safe_commit(db_session)
 
             resp.status = falcon.HTTP_CREATED if is_new else falcon.HTTP_OK
             req.context['result'] = {

@@ -1,10 +1,10 @@
-# Bionic Falcon -- Automated CRUD operations for Falcon 2
+# Bionic Falcon -- Automated CRUD operations for Falcon 2 and 3
 
 Makes RESTful CRUD easier.
 
 ## Acknowledgements
 
-This is a Falcon 2 compatible adaptation of Gary Monson's Falcon AutoCRUD
+This is a Falcon 2 and 3 compatible adaptation of Gary Monson's Falcon AutoCRUD
 package -- huge props to him for building out an amazing set of features!
 I very much plan to keep this package in the same spirit and format as
 the original.

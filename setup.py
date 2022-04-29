@@ -1,6 +1,6 @@
 from setuptools import setup
 
-version = '1.0.38'
+version = '1.0.40'
 
 with open('README.rst', 'r') as file:
     long_description = file.read()
@@ -27,7 +27,7 @@ setup(name='bionic-falcon',
       keywords='falcon crud rest database',
       packages=['bionic_falcon'],
       install_requires=[
-          'falcon >= 2.0.0, <= 3.0.0',
+          'falcon >= 2.0.0',
           'jsonschema',
           'sqlalchemy',
       ],
